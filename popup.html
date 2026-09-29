@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Collections</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Top Navigation Bar -->
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+              <path d="M6 6h10"></path>
+              <path d="M6 10h10"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">Collections</h1>
+            <p class="brand-subtitle" id="statsLine">Select a topic or group to get started</p>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="quickAddCurrentBtn" class="btn btn-secondary btn-sm" title="Quickly add current active tab to a collection">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+            <span>Add Active Tab</span>
+          </button>
+
+          <button id="openPickerBtn" class="btn btn-primary btn-sm" title="Add open tabs to a collection">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+              <path d="M9 3v18"></path>
+            </svg>
+            <span>Open Tabs</span>
+          </button>
+
+          <button id="openFullTabBtn" class="btn btn-icon btn-ghost" title="Open in full browser tab" aria-label="Open in full browser tab">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+            </svg>
+          </button>
+
+          <div class="menu-dropdown-wrapper">
+            <button id="menuToggleBtn" class="btn btn-icon btn-ghost" title="More options" aria-label="More options">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"></circle>
+                <circle cx="12" cy="5" r="1"></circle>
+                <circle cx="12" cy="19" r="1"></circle>
+              </svg>
+            </button>
+            <div id="moreMenu" class="dropdown-menu hidden">
+              <button id="exportBtn" class="dropdown-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>
+                Export Collections (JSON)
+              </button>
+              <label id="importLabel" class="dropdown-item">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+                Import Collections
+                <input type="file" id="importInput" accept=".json" style="display: none;" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Quick Add Collection Bar with Color Palette GUI -->
+      <section class="create-subject-card">
+        <div class="color-palette-gui">
+          <div class="color-palette" id="colorPaletteSwatches">
+            <span class="color-swatch active" data-color="#0284c7" style="background-color: #0284c7;" title="Sky Blue"></span>
+            <span class="color-swatch" data-color="#10b981" style="background-color: #10b981;" title="Emerald"></span>
+            <span class="color-swatch" data-color="#8b5cf6" style="background-color: #8b5cf6;" title="Purple"></span>
+            <span class="color-swatch" data-color="#f59e0b" style="background-color: #f59e0b;" title="Amber"></span>
+            <span class="color-swatch" data-color="#ec4899" style="background-color: #ec4899;" title="Rose"></span>
+            <span class="color-swatch" data-color="#6366f1" style="background-color: #6366f1;" title="Indigo"></span>
+            <span class="color-swatch" data-color="#06b6d4" style="background-color: #06b6d4;" title="Cyan"></span>
+            <span class="color-swatch" data-color="#64748b" style="background-color: #64748b;" title="Slate"></span>
+          </div>
+
+          <!-- Color shade picker & Hex Code GUI -->
+          <div class="custom-color-controls" title="Custom color shade picker & hex input">
+            <label class="custom-picker-label" title="Click to open shade gradient picker">
+              <input type="color" id="paletteColorPicker" value="#0284c7" />
+              <span class="palette-swatch-badge" id="customColorPreview" style="background-color: #0284c7;">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3">
+                  <path d="M12 2v20M2 12h20"></path>
+                </svg>
+              </span>
+            </label>
+            <div class="hex-input-group">
+              <span class="hex-symbol">#</span>
+              <input id="hexColorInput" type="text" value="0284c7" maxlength="7" spellcheck="false" placeholder="0284c7" title="Enter any 6-digit hex code" />
+            </div>
+          </div>
+        </div>
+
+        <div class="create-input-group">
+          <input id="subjectInput" type="text" placeholder="New collection (e.g., Projects, Research, Work)..." maxlength="50" autocomplete="off" />
+          <button id="createSubjectBtn" class="btn btn-primary" title="Create collection">
+            Create
+          </button>
+        </div>
+      </section>
+
+      <!-- Search / Filter Bar -->
+      <div class="filter-row">
+        <div class="search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+          <input id="searchInput" type="text" placeholder="Search collections, folders, or tabs..." />
+        </div>
+      </div>
+
+      <!-- Main Collections Container -->
+      <main id="groupsContainer" class="groups-container">
+        <!-- Rendered dynamically by popup.js -->
+      </main>
+
+      <!-- Add Open Tabs Drawer / Modal -->
+      <div id="pickerModal" class="modal hidden">
+        <div class="modal-backdrop" id="closePickerBackdrop"></div>
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Add Open Tabs</h2>
+              <p class="modal-subtitle">Select open tabs to add into your collection or folder</p>
+            </div>
+            <button id="closePickerBtn" class="btn btn-icon btn-ghost" aria-label="Close modal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+          </div>
+
+          <div class="modal-controls">
+            <div class="target-select-row">
+              <label for="pickerTargetGroup">Destination:</label>
+              <select id="pickerTargetGroup" class="form-select"></select>
+            </div>
+            <button id="selectAllTabsBtn" class="btn btn-ghost btn-sm">Select All</button>
+          </div>
+
+          <div id="pickerTabsList" class="picker-tabs-list">
+            <!-- Open tabs injected dynamically -->
+          </div>
+
+          <div class="modal-footer">
+            <button id="cancelPickerBtn" class="btn btn-ghost">Cancel</button>
+            <button id="confirmAddTabsBtn" class="btn btn-primary">Add Selected Tabs</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Add Active Tab Mini-Dialog -->
+      <div id="quickAddModal" class="modal hidden">
+        <div class="modal-backdrop" id="closeQuickAddBackdrop"></div>
+        <div class="modal-card modal-sm">
+          <div class="modal-header">
+            <h2 class="modal-title">Add Active Tab</h2>
+            <button id="closeQuickAddBtn" class="btn btn-icon btn-ghost" aria-label="Close modal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="active-tab-preview" id="activeTabPreview">
+              <span class="tab-favicon"></span>
+              <div class="tab-preview-text">
+                <span class="preview-title" id="activeTabTitle"></span>
+                <span class="preview-url" id="activeTabUrl"></span>
+              </div>
+            </div>
+            <div class="target-select-row">
+              <label for="quickAddTargetGroup">Save to Folder:</label>
+              <select id="quickAddTargetGroup" class="form-select"></select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="cancelQuickAddBtn" class="btn btn-ghost">Cancel</button>
+            <button id="confirmQuickAddBtn" class="btn btn-primary">Save Tab</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Create Sub-folder Modal -->
+      <div id="subfolderModal" class="modal hidden">
+        <div class="modal-backdrop" id="closeSubfolderBackdrop"></div>
+        <div class="modal-card modal-sm">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">New Sub-folder</h2>
+              <p class="modal-subtitle" id="subfolderParentLabel">Inside: Root</p>
+            </div>
+            <button id="closeSubfolderBtn" class="btn btn-icon btn-ghost" aria-label="Close modal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="form-field">
+              <label for="subfolderNameInput">Folder Name:</label>
+              <input type="text" id="subfolderNameInput" class="form-input" placeholder="e.g., Sub-topic, Resources, Module 1..." maxlength="50" autocomplete="off" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="cancelSubfolderBtn" class="btn btn-ghost">Cancel</button>
+            <button id="confirmSubfolderBtn" class="btn btn-primary">Create Folder</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group Thumbnail Selector Modal -->
+      <div id="thumbnailModal" class="modal hidden">
+        <div class="modal-backdrop" id="closeThumbnailBackdrop"></div>
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Group Cover & Thumbnail</h2>
+              <p class="modal-subtitle" id="thumbnailModalSubtitle">Select a tab thumbnail or provide a custom image</p>
+            </div>
+            <button id="closeThumbnailBtn" class="btn btn-icon btn-ghost" aria-label="Close modal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <div class="modal-body modal-scrollable">
+            <div class="thumb-section">
+              <h3 class="thumb-section-title">Select from tabs in this group:</h3>
+              <div id="thumbTabsGrid" class="thumb-tabs-grid">
+                <!-- Injected dynamically -->
+              </div>
+            </div>
+
+            <div class="thumb-divider"><span>OR</span></div>
+
+            <div class="thumb-section">
+              <h3 class="thumb-section-title">Custom Image URL:</h3>
+              <div class="custom-thumb-input-row">
+                <input type="url" id="customThumbUrlInput" class="form-input" placeholder="https://example.com/image.jpg..." />
+                <button id="applyThumbUrlBtn" class="btn btn-secondary btn-sm">Use URL</button>
+              </div>
+            </div>
+
+            <div class="thumb-divider"><span>OR</span></div>
+
+            <div class="thumb-section">
+              <h3 class="thumb-section-title">Upload Local Image:</h3>
+              <div class="custom-thumb-input-row">
+                <label class="btn btn-secondary btn-sm file-upload-btn">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+                  <span>Choose Image File...</span>
+                  <input type="file" id="thumbFileInput" accept="image/*" style="display:none;" />
+                </label>
+                <button id="removeThumbBtn" class="btn btn-ghost btn-sm btn-danger-text">Remove Cover</button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="cancelThumbnailBtn" class="btn btn-ghost">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Group Card Template (Root Collection & Sub-Folders) -->
+    <template id="groupTemplate">
+      <section class="group-card" draggable="false">
+        <div class="group-header">
+          <!-- Prominent Color Code Block on Left (Matching User Sketch) -->
+          <div class="group-header-color-block" title="Collection color code">
+            <div class="group-drag-handle" title="Drag to reorder folder">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/>
+                <circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+              </svg>
+            </div>
+
+            <!-- Group Cover / Thumbnail Button -->
+            <button class="group-thumb-btn" title="Click to choose group cover/thumbnail">
+              <img class="group-thumb-img hidden" alt="" />
+              <div class="group-thumb-placeholder">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                  <circle cx="9" cy="9" r="2"></circle>
+                  <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                </svg>
+              </div>
+            </button>
+          </div>
+
+          <div class="group-title-area">
+            <span class="group-chevron-icon" title="Click to expand/collapse dropdown">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </span>
+            <span class="group-folder-icon hidden" title="Sub-folder">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+              </svg>
+            </span>
+            <input class="group-title-input" type="text" title="Click to rename" maxlength="50" />
+            <span class="group-tab-count">0 tabs</span>
+          </div>
+
+          <!-- Dynamic Folder Toggle Button -->
+          <button class="group-dynamic-toggle-btn" title="Toggle dynamic live tracking for all tabs inside this folder">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span class="dynamic-toggle-label">Dynamic</span>
+          </button>
+
+          <div class="group-header-actions">
+            <button class="btn btn-ghost btn-icon group-add-subgroup-btn" title="Create a sub-folder inside this group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+            </button>
+            <button class="btn btn-ghost btn-icon group-add-tab-btn" title="Add tabs to this group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"></path></svg>
+            </button>
+            <button class="btn btn-ghost btn-icon group-restore-btn" title="Open all tabs in this group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"></path></svg>
+            </button>
+            <button class="btn btn-ghost btn-icon group-delete-btn" title="Delete group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Nested Sub-groups Container -->
+        <div class="group-subgroups-container"></div>
+
+        <!-- Group Saved Tabs Container -->
+        <div class="group-tabs-list"></div>
+      </section>
+    </template>
+
+    <!-- Saved Tab Item Template (Microsoft Collections Style with Rich Thumbnails) -->
+    <template id="savedTabTemplate">
+      <div class="saved-tab-card" draggable="true">
+        <div class="tab-drag-handle" title="Drag to reorder tab">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="9" cy="5" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="19" r="1.5"/>
+            <circle cx="15" cy="5" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+          </svg>
+        </div>
+
+        <!-- Visual Thumbnail (16:9 Microsoft Collections Style) -->
+        <div class="saved-tab-thumb-wrapper">
+          <img class="saved-tab-thumb-img" alt="" loading="lazy" />
+          <div class="saved-tab-thumb-fallback">
+            <span class="tab-favicon"></span>
+          </div>
+        </div>
+
+        <div class="saved-tab-center">
+          <div class="saved-tab-title" title=""></div>
+          <div class="saved-tab-details">
+            <span class="saved-tab-domain"></span>
+            <span class="saved-tab-badge youtube-badge hidden"></span>
+            <span class="saved-tab-status-pill"></span>
+          </div>
+        </div>
+
+        <div class="saved-tab-actions">
+          <!-- Dynamic Toggle for Individual Tab -->
+          <button class="btn-tab-dynamic" title="Toggle dynamic updates for this tab">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            <span class="tab-dynamic-label">Dynamic</span>
+          </button>
+
+          <button class="btn btn-ghost btn-icon open-tab-btn" title="Open tab (resumes where you left off)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"></path></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon delete-tab-btn" title="Remove tab">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <!-- Picker Open Tab Item Template -->
+    <template id="pickerTabTemplate">
+      <label class="picker-tab-item">
+        <input type="checkbox" class="picker-tab-checkbox" />
+        <span class="tab-favicon"></span>
+        <div class="picker-tab-info">
+          <span class="picker-tab-title"></span>
+          <span class="picker-tab-url"></span>
+        </div>
+      </label>
+    </template>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+cat << 'EOF' > .gitignore
+*.pem
+*.crx
+*.zip
+.DS_Store
+Thumbs.db
+node_modules/
+EOF
