@@ -1,4 +1,23 @@
 /**
+ * Recursively update dynamic tracking mode for a group, all its subgroups, and all its tabs.
+ */
+function setDynamicRecursively(group, dynamicState) {
+  group.dynamic = dynamicState;
+  group.updatedAt = Date.now();
+  if (Array.isArray(group.tabs)) {
+    group.tabs.forEach((tab) => {
+      tab.dynamic = dynamicState;
+      tab.updatedAt = Date.now();
+    });
+  }
+  if (Array.isArray(group.subgroups)) {
+    group.subgroups.forEach((sub) => {
+      setDynamicRecursively(sub, dynamicState);
+    });
+  }
+}
+
+/**
  * ============================================================================
  * Collections - Popup Script (Microsoft Edge Collections Style)
  * ============================================================================
@@ -343,33 +362,43 @@ function countAllGroups(groups = collections) {
  * Load collections and active tracking map from Chrome storage
  */
 async function loadState() {
-  const data = await chrome.storage.local.get([STORAGE_KEY, TRACKED_TABS_KEY]);
+  const data = await chrome.storage.local.get([STORAGE_KEY, TRACKED_TABS_KEY, "_dynamicV2"]);
   const rawCollections = data[STORAGE_KEY] || [];
+  const isMigratedV2 = Boolean(data._dynamicV2);
 
   // Normalize data with backward compatibility
-  function normalizeGroup(g, parentId = null) {
+  function normalizeGroup(g, parentId = null, parentDynamic = false) {
     if (!g.id) g.id = uid();
     g.parentId = parentId;
     if (!Array.isArray(g.tabs)) g.tabs = [];
     if (!Array.isArray(g.subgroups)) g.subgroups = [];
-    if (typeof g.dynamic !== "boolean") g.dynamic = false;
+    if (typeof g.dynamic !== "boolean") g.dynamic = parentDynamic;
     if (!g.thumbnail) g.thumbnail = null;
+
+    // Backward compat: if old group was dynamic, ensure all its tabs/subgroups are dynamic
+    if (!isMigratedV2 && g.dynamic) {
+      g.tabs.forEach((t) => { t.dynamic = true; });
+      g.subgroups.forEach((sub) => { sub.dynamic = true; });
+    }
 
     // Normalize tabs
     g.tabs.forEach((t) => {
       if (!t.id) t.id = uid();
-      if (typeof t.dynamic !== "boolean") t.dynamic = false;
+      if (typeof t.dynamic !== "boolean") t.dynamic = g.dynamic;
       if (!t.thumbnail) {
         t.thumbnail = getYouTubeThumbnail(t.url) || null;
       }
     });
 
     // Normalize nested subgroups
-    g.subgroups.forEach((sub) => normalizeGroup(sub, g.id));
+    g.subgroups.forEach((sub) => normalizeGroup(sub, g.id, g.dynamic));
     return g;
   }
 
-  collections = rawCollections.map((g) => normalizeGroup(g, null));
+  collections = rawCollections.map((g) => normalizeGroup(g, null, false));
+  if (!isMigratedV2) {
+    await chrome.storage.local.set({ _dynamicV2: true, [STORAGE_KEY]: collections });
+  }
 
   const rawTracked = data[TRACKED_TABS_KEY] || {};
   activeTrackedMap = {};
@@ -688,7 +717,7 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
   const isSubfolder = depth > 0;
   if (isSubfolder) {
     node.classList.add("subfolder-card");
-    node.style.marginLeft = `${depth * 14}px`;
+    node.style.marginLeft = `${depth * 10}px`;
   }
 
   // 0. Dropdown Collapse / Expand State
@@ -775,23 +804,24 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
 
   // 5. Dynamic Folder Toggle Badge
   const dynamicToggleBtn = node.querySelector(".group-dynamic-toggle-btn");
-  const isAncestorDynamic = Boolean(parentGroup?.dynamic);
-  const isSelfDynamic = Boolean(group.dynamic);
+  const isGroupDynamic = Boolean(group.dynamic);
 
-  if (isSelfDynamic || isAncestorDynamic) {
+  if (isGroupDynamic) {
     dynamicToggleBtn.classList.add("is-active");
-    dynamicToggleBtn.title = isSelfDynamic
-      ? "Dynamic tracking is ON for this folder. All saved tabs sync live!"
-      : "Dynamic tracking is inherited from parent folder.";
+    dynamicToggleBtn.title = isSubfolder
+      ? "Dynamic tracking is ON for this sub-folder. Click to make static bookmark."
+      : "Dynamic tracking is ON for this collection. All content syncs live. Click to turn off.";
   } else {
     dynamicToggleBtn.classList.remove("is-active");
-    dynamicToggleBtn.title = "Dynamic updates are OFF for this folder. Click to turn on.";
+    dynamicToggleBtn.title = isSubfolder
+      ? "Dynamic tracking is OFF for this sub-folder. Click to make all content dynamic."
+      : "Dynamic tracking is OFF for this collection. Click to make all content dynamic.";
   }
 
   dynamicToggleBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
-    group.dynamic = !group.dynamic;
-    group.updatedAt = Date.now();
+    const nextState = !isGroupDynamic;
+    setDynamicRecursively(group, nextState);
     await saveCollections();
     render();
   });
@@ -861,7 +891,7 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
         if (!matchTitle && !matchUrl) return;
       }
 
-      const tabNode = renderSavedTabItem(group, savedTab, Boolean(group.dynamic || isAncestorDynamic));
+      const tabNode = renderSavedTabItem(group, savedTab);
       tabsList.append(tabNode);
     });
   }
@@ -872,7 +902,7 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
 /**
  * Render individual tab card with Microsoft Collections aesthetic & thumbnail
  */
-function renderSavedTabItem(group, savedTab, isFolderDynamic = false) {
+function renderSavedTabItem(group, savedTab) {
   const node = els.savedTabTemplate.content.firstElementChild.cloneNode(true);
   node.dataset.savedTabId = savedTab.id;
   node.dataset.groupId = group.id;
@@ -942,21 +972,18 @@ function renderSavedTabItem(group, savedTab, isFolderDynamic = false) {
   // 5. Dynamic Toggle Badge for this specific tab
   const dynamicBtn = node.querySelector(".btn-tab-dynamic");
   const isTabDynamic = Boolean(savedTab.dynamic);
-  const isEffectiveDynamic = isTabDynamic || isFolderDynamic;
 
-  if (isEffectiveDynamic) {
+  if (isTabDynamic) {
     dynamicBtn.classList.add("is-active");
-    dynamicBtn.title = isFolderDynamic
-      ? "Dynamic tracking active (inherited from folder)."
-      : "Dynamic tracking is ON for this tab. Updates in Chrome sync automatically.";
+    dynamicBtn.title = "Dynamic tracking is ON for this tab. Updates in Chrome sync automatically. Click to track normally (static bookmark).";
   } else {
     dynamicBtn.classList.remove("is-active");
-    dynamicBtn.title = "Dynamic updates are OFF for this tab. Click to enable.";
+    dynamicBtn.title = "Static bookmark mode (updates OFF). Click to enable dynamic tracking.";
   }
 
   dynamicBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
-    savedTab.dynamic = !savedTab.dynamic;
+    savedTab.dynamic = !isTabDynamic;
     savedTab.updatedAt = Date.now();
     group.updatedAt = Date.now();
     await saveCollections();
@@ -1386,7 +1413,7 @@ async function confirmCreateSubfolder() {
     id: uid(),
     name: name,
     parentId: parent.id,
-    dynamic: false,
+    dynamic: Boolean(parent.dynamic),
     thumbnail: null,
     tabs: [],
     subgroups: [],
@@ -1665,7 +1692,7 @@ async function confirmAddTabs() {
       lastUrl: tab.url,
       favIconUrl: tab.favIconUrl || "",
       thumbnail: ytThumb || null,
-      dynamic: false,
+      dynamic: Boolean(targetGroup.dynamic),
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -1770,7 +1797,7 @@ async function confirmQuickAdd() {
     lastUrl: currentActiveTab.url,
     favIconUrl: currentActiveTab.favIconUrl || "",
     thumbnail: ytThumb || null,
-    dynamic: false,
+    dynamic: Boolean(targetGroup.dynamic),
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -1928,11 +1955,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
  * Initialize extension popup
  */
 async function init() {
-  // Detect full-page mode (opened as a browser tab via ?fullpage=1)
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get("fullpage") === "1") {
-    document.body.classList.add("fullpage-mode");
+  // Detect full-page mode (opened as a browser tab via ?fullpage=1 or window width > 550px)
+  function checkFullPageMode() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("fullpage") === "1" || window.innerWidth > 550) {
+      document.body.classList.add("fullpage-mode");
+    } else {
+      document.body.classList.remove("fullpage-mode");
+    }
   }
+
+  checkFullPageMode();
+  window.addEventListener("resize", checkFullPageMode);
 
   setSelectedColor(DEFAULT_COLORS[0]);
   await Promise.all([loadState(), loadOpenTabs()]);

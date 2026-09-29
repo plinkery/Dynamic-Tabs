@@ -46,17 +46,17 @@ async function saveTrackedTabs(trackedTabs) {
  * Recursively searches root collections and nested subgroups.
  * Tracks if any ancestor group has dynamic updates enabled.
  */
-function findGroupAndTab(groups, groupId, savedTabId, ancestorDynamic = false) {
+function findGroupAndTab(groups, groupId, savedTabId, parentDynamic = false) {
   if (!Array.isArray(groups)) return {};
 
   for (const group of groups) {
-    const isDynamic = Boolean(ancestorDynamic || group.dynamic);
+    const isGroupDynamic = typeof group.dynamic === "boolean" ? group.dynamic : parentDynamic;
 
     // 1. If groupId matches directly
     if (group.id === groupId && Array.isArray(group.tabs)) {
       const savedTab = group.tabs.find((item) => item.id === savedTabId);
       if (savedTab) {
-        return { group, savedTab, isGroupDynamic: isDynamic };
+        return { group, savedTab, isGroupDynamic };
       }
     }
 
@@ -64,13 +64,13 @@ function findGroupAndTab(groups, groupId, savedTabId, ancestorDynamic = false) {
     if (Array.isArray(group.tabs)) {
       const savedTab = group.tabs.find((item) => item.id === savedTabId);
       if (savedTab) {
-        return { group, savedTab, isGroupDynamic: isDynamic };
+        return { group, savedTab, isGroupDynamic };
       }
     }
 
     // 3. Search nested subgroups recursively
     if (Array.isArray(group.subgroups) && group.subgroups.length > 0) {
-      const result = findGroupAndTab(group.subgroups, groupId, savedTabId, isDynamic);
+      const result = findGroupAndTab(group.subgroups, groupId, savedTabId, isGroupDynamic);
       if (result.savedTab) {
         return result;
       }
@@ -144,11 +144,11 @@ async function updateTrackedTab(tabId, changes = {}) {
   }
 
   // DYNAMIC TRACKING CHECK:
-  // Updates are only applied if the tab itself is marked dynamic,
-  // or if the containing folder (or ancestor folder) has dynamic updates enabled.
-  const isDynamic = Boolean(savedTab.dynamic || isGroupDynamic || group?.dynamic);
+  // Tab-level setting has highest priority: users can unselect individual tabs to stay static.
+  // If not explicitly set on the tab, it inherits from the containing folder.
+  const isDynamic = typeof savedTab.dynamic === "boolean" ? savedTab.dynamic : isGroupDynamic;
   if (!isDynamic) {
-    // Tab and group are static: preserve existing saved URL and timestamps
+    // Tab is in static bookmark mode: preserve existing saved URL and timestamps
     return;
   }
 

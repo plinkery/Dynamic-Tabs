@@ -77,6 +77,7 @@ body.fullpage-mode {
   height: 100vh;
   max-height: 100vh;
   font-size: 14px;
+  background-color: #f1f5f9;
 }
 
 button, input, select {
@@ -94,26 +95,157 @@ button, input, select {
   overflow: hidden;
 }
 
-/* Full-page layout adjustments */
+/* Full-page layout adjustments: expansive visual dashboard */
 body.fullpage-mode .app-container {
-  max-width: 900px;
+  max-width: 1600px;
   margin: 0 auto;
   width: 100%;
+  height: 100vh;
+  max-height: 100vh;
+}
+
+body.fullpage-mode .topbar {
+  padding: 14px 28px;
+  background: var(--bg-card);
+}
+
+body.fullpage-mode .brand {
+  gap: 12px;
+}
+
+body.fullpage-mode .brand-icon {
+  width: 36px;
+  height: 36px;
+}
+
+body.fullpage-mode .brand-title {
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+
+body.fullpage-mode .brand-subtitle {
+  font-size: 12.5px;
+}
+
+body.fullpage-mode .topbar-actions .btn {
+  padding: 7px 14px;
+  font-size: 12.5px;
+  border-radius: var(--radius-md);
+}
+
+body.fullpage-mode .create-subject-card {
+  padding: 14px 28px;
+  gap: 10px;
+}
+
+body.fullpage-mode .color-swatch {
+  width: 18px;
+  height: 18px;
+}
+
+body.fullpage-mode .create-input-group input {
+  padding: 9px 14px;
+  font-size: 13.5px;
+}
+
+body.fullpage-mode .create-input-group .btn {
+  padding: 9px 18px;
+  font-size: 13px;
+}
+
+body.fullpage-mode .filter-row {
+  padding: 10px 28px;
+  background: transparent;
+}
+
+body.fullpage-mode .search-box {
+  padding: 9px 14px;
+  font-size: 13.5px;
+  max-width: 520px;
+}
+
+body.fullpage-mode .search-box input {
+  font-size: 13.5px;
 }
 
 body.fullpage-mode .groups-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  gap: 20px;
+  padding: 16px 28px 32px 28px;
   align-items: start;
 }
 
 body.fullpage-mode .group-card {
   margin-bottom: 0;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+body.fullpage-mode .group-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+body.fullpage-mode .group-header {
+  min-height: 48px;
+  padding: 0 12px 0 0;
+}
+
+body.fullpage-mode .group-title-input {
+  font-size: 14.5px;
+}
+
+body.fullpage-mode .group-tab-count {
+  font-size: 11.5px;
+  padding: 2px 8px;
+}
+
+body.fullpage-mode .group-tabs-list {
+  max-height: 520px;
+  min-height: 50px;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+body.fullpage-mode .subfolder-card .group-tabs-list {
+  max-height: 400px;
+}
+
+body.fullpage-mode .saved-tab-card {
+  padding: 8px 12px;
+  min-height: 58px;
+  gap: 12px;
+  border-radius: var(--radius-sm);
+}
+
+body.fullpage-mode .saved-tab-thumb-wrapper {
+  width: 80px;
+  height: 48px;
+}
+
+body.fullpage-mode .saved-tab-title {
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+body.fullpage-mode .saved-tab-details {
+  font-size: 11.5px;
+  gap: 8px;
+}
+
+body.fullpage-mode .saved-tab-domain {
+  max-width: 200px;
+}
+
+body.fullpage-mode .btn-tab-dynamic {
+  font-size: 11px;
+  padding: 3px 8px;
 }
 
 body.fullpage-mode .empty-state {
   grid-column: 1 / -1;
+  padding: 60px 20px;
 }
 
 /* Hide the expand button when already in full-page mode */
@@ -554,6 +686,48 @@ body.fullpage-mode #openFullTabBtn {
   border-left-color: var(--primary);
 }
 
+.subfolder-card .group-header {
+  padding-right: 8px;
+  position: relative;
+}
+
+.subfolder-card .group-header-color-block {
+  padding: 4px 6px;
+  gap: 4px;
+}
+
+/* Hide placeholder thumbnail button in subfolders unless hovered or has custom cover */
+.subfolder-card .group-thumb-btn:not(:has(img:not(.hidden))) {
+  display: none;
+}
+
+.subfolder-card .group-header:hover .group-thumb-btn:not(:has(img:not(.hidden))),
+.subfolder-card .group-header:focus-within .group-thumb-btn:not(:has(img:not(.hidden))) {
+  display: flex;
+}
+
+/* Hide functionality buttons for all subfolders by default; reveal smoothly on hover/focus */
+.subfolder-card .group-header-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.subfolder-card .group-header:hover .group-header-actions,
+.subfolder-card .group-header:focus-within .group-header-actions {
+  display: flex;
+}
+
+/* Inactive dynamic toggle on subfolders is hidden until hovered, active pill stays visible */
+.subfolder-card .group-dynamic-toggle-btn:not(.is-active) {
+  display: none;
+}
+
+.subfolder-card .group-header:hover .group-dynamic-toggle-btn:not(.is-active),
+.subfolder-card .group-header:focus-within .group-dynamic-toggle-btn:not(.is-active) {
+  display: inline-flex;
+}
+
 .subfolder-card .group-tabs-list {
   max-height: 240px;
 }
@@ -711,7 +885,9 @@ body.fullpage-mode #openFullTabBtn {
   border-radius: 4px;
   padding: 2px 4px;
   width: 100%;
-  max-width: 160px;
+  max-width: 100%;
+  flex: 1;
+  min-width: 50px;
   outline: none;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1365,3 +1541,44 @@ body.fullpage-mode #openFullTabBtn {
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
 }
 
+
+/* Automatic responsive scaling when window is widened */
+@media (min-width: 601px) {
+  body:not(.fullpage-mode) {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    font-size: 14px;
+    background-color: #f1f5f9;
+  }
+  body:not(.fullpage-mode) .app-container {
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+    height: 100vh;
+    max-height: 100vh;
+  }
+  body:not(.fullpage-mode) .topbar {
+    padding: 14px 28px;
+  }
+  body:not(.fullpage-mode) .groups-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+    gap: 20px;
+    padding: 16px 28px 32px 28px;
+    align-items: start;
+  }
+  body:not(.fullpage-mode) .group-card {
+    margin-bottom: 0;
+  }
+  body:not(.fullpage-mode) .group-tabs-list {
+    max-height: 520px;
+  }
+  body:not(.fullpage-mode) .saved-tab-thumb-wrapper {
+    width: 80px;
+    height: 48px;
+  }
+  body:not(.fullpage-mode) #openFullTabBtn {
+    display: none;
+  }
+}
