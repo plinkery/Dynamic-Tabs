@@ -2,7 +2,7 @@
 
 ### 🔄 Want your saved tabs to keep up with you?
 > Automatically track URL changes — privately, locally, and with no account or signup.
-> **Track URL changes automatically — privately, locally, and with no account or signup.**
+
 
 Save a tab once and let Dynamic Tabs keep its saved URL and title updated as you navigate.
 
