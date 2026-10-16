@@ -1,409 +1,234 @@
 # Dynamic Tabs
 
-### 🔄 Want your saved tabs to keep up with you?
-> Automatically track URL changes — privately, locally, and with no account or signup.
+> **The private, local tab manager that remembers where you left off — no account, no cloud, no catch.**
 
+Save a tab once. Dynamic Tabs keeps its URL, title, favicon, scroll position, and YouTube timestamp updated as you browse — entirely inside your own browser.
 
-Save a tab once and let Dynamic Tabs keep its saved URL and title updated as you navigate.
-
-**No account. No cloud sync. No analytics. No browsing data uploaded to a server.**
-
-Your collection data stays in your browser.
+**No signup · No cloud · No analytics · No data ever leaves your machine.**
 
 ---
 
-## 🤔 Why Dynamic Tabs?
+## ⚡ 60-second pitch
 
-### Want to keep track of exactly where you left off — without signing in?
+| You want to… | Dynamic Tabs can… |
+|---|---|
+| Pick up a YouTube lecture where you stopped | Save the video + timestamp; reopen and it resumes automatically |
+| Follow an anime episode-by-episode without losing track | Let Dynamic tracking update the saved URL as you move between episodes |
+| Organise course material into neat folders | Create unlimited nested collections with custom colours and covers |
+| Close a bunch of research tabs and reopen them later | Open All / Close Tracked — no duplicates, one click |
+| Keep your data private | Everything stays in `chrome.storage.local`. Nothing is sent anywhere. |
 
-Ever watched a YouTube video and thought:
-
-> *“I'll come back to this later.”*
-
-Then struggled to find the exact YouTube account you watched that in?
-
-Dynamic Tabs lets you save the video and keep it organized in your own collections — **even if you aren't signed in to YouTube.**
-
-And because Dynamic Tabs can track YouTube videos and their playback position, you can come back later and continue from where you left off.
+**Completely private and secure** — open-source, auditable, no backend required.
 
 ---
 
-### 📺 Watching an anime, web series, or movie?
+## 🔒 Privacy in plain language
 
-Want to remember **exactly which episode you're watching?**
+Dynamic Tabs needs access to web pages so it can detect URL changes and track scroll/playback position. Here is exactly what it does and does **not** do with that access:
 
-Save it once and enable Dynamic Tracking.
+| ✅ What it does | ❌ What it never does |
+|---|---|
+| Reads the current URL to detect navigation | Upload your browsing history |
+| Saves scroll position locally | Sync data to any server |
+| Tracks YouTube timestamp locally | Require an account or email |
+| Stores all collections in `chrome.storage.local` | Run any analytics or telemetry |
 
-As you move from:
-
-```text
-Episode 5
-    ↓
-Episode 6
-    ↓
-Episode 7
-```
-
-Dynamic Tabs can update the saved tab to follow the episode you're currently watching.
-
-So instead of remembering:
-
-> *“I think I was somewhere around episode 7...”*
-
-your collection can keep track of it for you.
+The full source code is public on GitHub — read every line yourself.
 
 ---
 
-### 🎓 Taking an online course?
+## 🗺️ Full Feature Reference
 
-Learning through an online platform? You can organize your course material into collections and let Dynamic Tracking keep your saved pages up to date as you progress.
+### 1 · Collections & Folders
 
-
-Instead of maintaining a pile of bookmarks that quickly become outdated, Dynamic Tabs can keep the saved page associated with your active tab synchronized as you move through the course.
-
----
-
-### 🔒 And you don't need to hand your data to another service.
-
-Your collections are stored locally in your browser.
-
-**No signup. No account. No cloud required.**
-
-Dynamic Tabs is built around a simple idea:
-
-> **Save what matters. Organize it your way. Let it keep up with you.**
-
-
-# 🔒 Privacy First
-
-Dynamic tracking requires website access because the extension needs to detect navigation changes on webpages.
-
-But **Dynamic Tabs does not need a server to do this.**
-
-Your collections are stored locally using:
-
-```text
-chrome.storage.local
-```
-
-There is:
-
-* ❌ No account
-* ❌ No signup
-* ❌ No cloud database
-* ❌ No analytics service
-* ❌ No collection-data upload
-* ❌ No requirement to send your browsing history to a server
-
-Your saved collections remain on your browser profile.
-
-### Why does the extension request website access?
-
-Dynamic Tabs uses website access to provide features such as:
-
-* Detecting URL changes in modern single-page applications
-* Updating dynamically tracked tabs
-* Detecting YouTube video changes
-* Tracking YouTube playback position
-
-The extension's source code is publicly available, so you can inspect exactly how these features are implemented.
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Create a collection** | Top input bar → type a name → **Create** button | Choose a colour swatch first, then press Create |
+| **Collapse / Expand** | Click the arrow (>) | Displays all the tracked tabs and subfolders within the main folder |
+| **Create a sub-folder** | Open a collection → click on **Add Sub-folder** button | Supports unlimited nesting |
+| **Rename** | Simply click on the folder name | Type new name |
+| **Delete** | click on bin icon next to folder name to **Delete** | Removes folder and all its tabs |
+| **Reorder** | click the left edge of a tab or a folder and drag  | Drop in any position; order is persisted |
+| **Move tab to a folder** | Right click the tracked tab and move it to a desired folder | moves a tab to a different folder |
+| **Custom colour** | Choose from default colors or select your own by clicking on the '+' symbol to the right | Pick from presets, use the colour picker, or type a HEX code |
+| **Custom cover image** | click on 🖼️ to set your own thumbnail | Choose a saved tab's thumbnail, paste an image URL, or upload a local file (stored locally, resized to 320 × 180) |
 
 ---
 
-# ⚡ What can it do?
+### 2 · Saving Tabs
 
-## 🔄 Real-time Dynamic Tracking
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Save the current active tab** | create a new folder or press the → **'+' Add Active Tab** button next to an exisiting folder | Opens a mini modal; pick the destination collection, confirm |
+| **Save multiple open tabs** | 
+| **Save the current active tab** | create a new folder or press the → **'+' Add Active Tab** button -> add all selected tabs | Tick the tabs you want; use **Select All / Deselect All** to bulk-select; choose destination; confirm. Duplicate URLs within the same folder are silently skipped. |
 
-Enable **Dynamic** mode for a saved tab.
 
-As you navigate:
-
-```text
-URL changes
-    ↓
-Dynamic Tabs detects it
-    ↓
-Saved tab information is updated
-```
-
-It can update:
-
-* URL
-* Page title
-* Favicon
-
-Dynamic tracking also works with many single-page applications where the URL changes without a traditional page reload.
-
-You can enable Dynamic tracking for an individual saved tab or a folder.
-
-Enabling Dynamic tracking for a folder also applies it to its child folders and saved tabs.
+> URLs are deduplicated **per folder** — the same URL can appear in different folders.
 
 ---
 
-## ▶️ YouTube Tracking
+### 3 · Dynamic Tracking
 
-Dynamic Tabs has dedicated YouTube support.
+Enable **Dynamic** mode to let the extension follow your browsing and keep saved tab data up to date.
 
-It can:
-
-* Detect video changes
-* Save playback position
-* Update the saved timestamp periodically
-* Restore the video using its saved timestamp
-* Display YouTube thumbnails
-
-So you can save a lecture and come back later without manually searching for where you stopped.
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Enable Dynamic (single tab)** | Saved tab → ⚡ Dynamic toggle | The saved URL, title, and favicon update as you navigate that tab |
+| **Enable Dynamic (entire folder)** | Folder menu (⋮) → **Mark as Dynamic** | All tabs and sub-folders inside inherit the Dynamic flag. The yellow ⚡ badge appears on the folder. |
+| **Disable Dynamic for a child** | Individual tab or sub-folder toggle | Turns off tracking for that item only; the parent folder badge reflects the mixed state |
+| **SPA / single-page app support** | Automatic when Dynamic is on | Catches URL changes made by `pushState` / `replaceState` (e.g., course platforms, streaming sites) without a full page reload |
 
 ---
 
-## 📁 Organize Everything
+### 4 · Scroll Position Tracking *(v2.0.0 — new)*
 
-Create collections and **unlimited nested folders** to organize anything you are learning, watching, or working on.
+When a dynamic tab is open, Dynamic Tabs periodically saves `scrollY` (how far down the page you have scrolled). When you reopen the tab, the page automatically scrolls back to where you left off.
 
-For example, you could organize your study material like this:
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Enable scroll tracking** | Automatic for all tabs with Dynamic enabled | No extra step needed; scroll position is stored alongside the saved tab |
+| **Scroll restoration** | Happens on page load when you reopen a saved tab | The page scrolls to the saved position a moment after load |
 
-```text
-📚 Academics
-├── Mathematics
-│   ├── Algebra
-│   ├── Calculus
-│   └── Probability
-│
-├── Biology
-│   ├── Cell Biology
-│   ├── Genetics
-│   └── Human Anatomy
-│
-├── Physics
-│   ├── Mechanics
-│   ├── Thermodynamics
-│   └── Electromagnetism
-│
-└── Chemistry
-    ├── Organic Chemistry
-    ├── Inorganic Chemistry
-    └── Physical Chemistry
-```
-
-You can:
-
-* Create collections and nested folders
-* Rename folders
-* Reorder them with drag-and-drop
-* Delete entire folders and their contents
-* Choose custom colours for your collections
-
+> Scroll tracking only runs on tabs you have explicitly marked as Dynamic. It is not active on every page you visit.
 
 ---
 
-## 🔖 Save Tabs Quickly
+### 5 · YouTube Tracking
 
-Save the active tab or select multiple tabs from your current browser window.
-
-Dynamic Tabs remembers information such as:
-
-* Page title
-* URL
-* Favicon
-* Last visited URL
-* Timestamps
-* Optional thumbnail
-
-The same normalized URL is prevented from being saved twice **inside the same folder**.
-
-The same URL can still exist in different folders.
+Dynamic Tabs has dedicated YouTube support, separate from generic scroll/URL tracking. Just turn on dynamic tracking on your youtube page or folder and it will automatically track the video changes in playlists or next video in a series and save the timestamp of where you left off.
 
 ---
 
-## ♻️ Restore Tabs Without Creating Duplicates
+### 6 · Opening & Restoring Tabs
 
-Restore a single saved tab or an entire folder.
-
-If Dynamic Tabs detects that the saved tab is already open, it can focus the existing tab instead of opening another copy.
-
----
-
-## 🖼️ Custom Collection Covers
-
-Give your collections their own visual identity.
-
-Set a cover using:
-
-* A saved tab
-* A direct image URL
-* A local image
-
-Local images are stored locally and resized to **320 × 180**.
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Open a single saved tab** | Click the tab title or the open-link icon | Opens in a new tab; if already open, focuses the existing tab |
+| **Open all tabs in a folder** | Folder header → **Open All** (↗ icon) | Creates new tabs only for saved tabs that are not already open |
+| **Close all tracked tabs** | Header → **Close Tracked (n)** button | Saves current state, shows a confirm dialog, then closes all n tracked tabs in one operation. The badge updates in real time. |
 
 ---
 
-## 🎨 Custom Colours
+### 7 · Active Tab Badges & Live Status
 
-Choose collection colours using:
-
-* Preset colours
-* A colour picker
-* A custom HEX value
-
----
-
-## 🔍 Search
-
-Quickly search through:
-
-* Collections
-* Folders
-* Saved tabs
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **"Active" badge on tabs** | Each saved-tab card when it is open in the browser | A coloured dot appears automatically; disappears when the tab is closed |
+| **Tracked tab count** | Header stats line: *N collections · M tabs (K active)* | K = number of tracked tabs currently open in the browser |
+| **Close Tracked count** | Button label: *Close Tracked (K)* | Updates in real time as you open or close tabs |
 
 ---
 
-## 💾 Backup & Restore
+### 8 · Full-Page Mode
 
-Export your collections as JSON.
-
-You can use the backup to:
-
-* Keep a manual backup
-* Move your collections to another browser profile
-* Restore your collection data after reinstalling
-
-### ⚠️ Important
-
-Importing a backup **replaces your existing collections**.
-
-It does **not merge** the imported data with your current collections.
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Expand to full browser tab** | Top right corner → **Expand** button (⛶) | Opens `popup.html?fullpage=1` as a normal tab for a wider, more comfortable layout |
 
 ---
 
-# 🚫 What Dynamic Tabs does NOT do
+### 9 · Search
 
-Dynamic Tabs does not automatically save every website you visit.
-
-You explicitly choose which tabs to save and which ones should use Dynamic tracking.
-
-It also does not currently:
-
-* Sync collections between devices
-* Sync between browser profiles
-* Sync with the cloud
-* Automatically back up your collections
-* Restore browser history
-* Restore scroll position
-* Restore login/session state
-* Restore pinned or muted tab state
-* Restore original window/tab positions
-* Track closed tabs
-* Track playback position on services other than YouTube
-* Manage Chrome's native Tab Groups
-* Merge imported backups
-* Save browser-internal pages such as `chrome://extensions`
-
-Dynamic tracking also stops when its associated browser tab is closed.
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Live search** | Search bar at the top of the popup | Filters collections, folders, and saved tabs by name/URL as you type |
 
 ---
 
-# 🌐 Browser Support
+### 10 · Backup & Migration
 
-Dynamic Tabs is being developed for modern browsers that support the required **Manifest V3 extension APIs**.
+| Feature | Where to find it | How to use it |
+|---|---|---|
+| **Export** | Header → **⋮ menu** → **Export** | Downloads a `collections-YYYY-MM-DD.json` file to your computer |
+| **Import** | Header → **⋮ menu** → **Import** | Replaces your current collections with the file you select |
 
-The planned supported browsers are:
-
-* 🌐 Google Chrome
-* 🔷 Microsoft Edge
-* 🦁 Brave
-* 🦊 Mozilla Firefox
-
-Browser-specific behaviour may vary, and each browser version will be tested separately before being considered officially supported.
-
-> **Note:** The project is currently being prepared for multi-browser release. Store availability may differ between browsers during the initial release.
+> ⚠️ Import **replaces** — it does not merge. Export a backup before importing.
 
 ---
 
-# 📦 Installation
+## 🚫 What Dynamic Tabs does not do
 
-## Browser Stores
+Dynamic Tabs is intentionally focused. It does **not**:
 
-Dynamic Tabs will be available through the respective browser extension stores once the releases are published.
+- Save every page you visit automatically
+- Sync across devices or browser profiles
+- Back up your data automatically
+- Restore login or session state
+- Restore pinned/muted tab state or original tab positions
+- Track closed tabs
+- Track playback position outside of YouTube
+- Manage Chrome's native Tab Groups
+- Merge imported backups with existing data
+- Save browser-internal pages (`chrome://`, `edge://`, etc.)
 
-* **Chrome Web Store:** *Coming soon*
-* **Microsoft Edge Add-ons:** *Coming soon*
-* **Brave:** *Coming soon / availability may depend on the Brave extension distribution process*
-* **Firefox Add-ons:** *Coming soon*
+---
 
-Links will be added here when each release is published.
+## 🌐 Browser Support
 
-## Install from source
+Built on **Manifest V3** — supported by Chrome, Edge, and Brave today.
 
-You can also run Dynamic Tabs directly from the source code.
+| Browser | Status |
+|---|---|
+| 🌐 Google Chrome | ✅ Supported |
+| 🔷 Microsoft Edge | ✅ [Supported-click here](https://microsoftedge.microsoft.com/addons/detail/dynamic-tabs/bipledcdgpjcdjfaekimeklofpaijilk?hl=en-US) |
+| 🦁 Brave | ✅ Supported |
+| 🦊 Mozilla Firefox | 🔜 Planned |
 
-### Chromium-based browsers
+---
 
-For Chrome, Edge, and Brave:
+## 📦 Installation
 
-1. Clone the repository:
+### From the browser store
+> Links will be added here once each store release is published.
+- **Microsoft Edge Add-ons:** *Coming soon*
+- **Chrome Web Store:** *Coming soon*
+
+### From source (Chrome / Edge / Brave)
 
 ```bash
 git clone https://github.com/plinkery/Dynamic-Tabs.git
 ```
 
-2. Open your browser's extension management page.
-3. Enable **Developer mode**.
-4. Choose **Load unpacked**.
-5. Select the Dynamic Tabs project directory.
-
-### Firefox
-
-Firefox has its own extension development and loading process. Instructions will be added here once the Firefox build has been tested and finalized.
+1. Go to `chrome://extensions` (or `edge://extensions`)
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select the cloned folder
 
 ---
 
-# 🛠️ Development
+## 🛠️ Tech stack
 
-Dynamic Tabs is built using:
-
-* JavaScript
-* HTML
-* CSS
-* Web Extension APIs
-* Manifest V3
-
-There is no backend server required for the extension's core functionality.
-
-The project is open source, so you can inspect the source code, understand how it works, modify it, and contribute improvements.
+Plain **JavaScript · HTML · CSS · Manifest V3 Web Extension APIs** — no build step, no framework, no backend.
 
 ---
 
-# 🐛 Bug Reports & Contributions
+## 🐛 Bug reports & contributions
 
-Found a bug or have an idea?
+Open a GitHub Issue and include:
 
-Open an **Issue** on GitHub and include:
-
-* What you were trying to do
-* What you expected to happen
-* What actually happened
-* Browser and browser version
-* Dynamic Tabs version
-* Steps to reproduce the problem
-* Screenshots or console errors, if relevant
+- What you were trying to do
+- What you expected vs. what happened
+- Browser name and version
+- Dynamic Tabs version
+- Steps to reproduce
+- Screenshots or console errors if available
 
 Pull requests are welcome.
 
 ---
 
-# 📄 License
+## 📄 License
 
-Dynamic Tabs is released under the **MIT License**.
-
-See [`LICENSE`](LICENSE) for the complete license text.
+MIT — see [`LICENSE`](LICENSE).
 
 ---
 
-## ⭐ Like the project?
+## ⭐ If Dynamic Tabs is useful to you
 
-If Dynamic Tabs is useful to you:
+⭐ Star the repo · 🐛 Report bugs · 💡 Suggest features · 🔧 Submit pull requests
 
-⭐ Star the repository
-🐛 Report bugs
-💡 Suggest features
-🔧 Contribute improvements
+---
+---
+---
+
