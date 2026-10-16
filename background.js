@@ -6,45 +6,223 @@
  * Purpose:
  * Runs in the background to:
  * 1. Maintain persistent storage of study collections (`studyCollections`).
- * 2. Maintain a live mapping between open Chrome tabs and saved items (`trackedTabs`).
- * 3. Dynamically update saved tab URLs, titles, and video timestamps as the user browses.
- * 4. Clean and normalize YouTube playlist URLs so reopening a saved tab always resumes
+ * 2. Maintain a live, authoritative mapping between open Chrome tabs and saved items (`trackedTabs`).
+ * 3. Reconcile tracked tabs with actual open browser tabs to prevent stale tab IDs.
+ * 4. Dynamically update saved tab URLs, titles, and video timestamps as the user browses.
+ * 5. Clean and normalize YouTube playlist URLs so reopening a saved tab always resumes
  *    the exact video where the user left off, without falling back to the first video.
+ * 6. Track and restore website scroll positions for dynamic tabs.
+ * 7. Provide atomic batch operations and instant memory caching for zero lag.
  */
 
 const STORAGE_KEY = "studyCollections";
 const TRACKED_TABS_KEY = "trackedTabs";
 
+// In-memory cache to prevent repeated disk I/O and storage lock contention
+let _cachedCollections = null;
+let _cachedTrackedTabs = null;
+let _saveCollectionsTimer = null;
+let _saveTrackedTimer = null;
+
 /**
- * Helper: Retrieve collections and tracked tabs from local storage.
- * Storage is local to the user's browser, completely offline and private.
+ * Helper: Retrieve collections and tracked tabs from local storage or memory cache.
  */
 async function getStore() {
+  if (_cachedCollections !== null && _cachedTrackedTabs !== null) {
+    return {
+      collections: _cachedCollections,
+      trackedTabs: _cachedTrackedTabs
+    };
+  }
+
   const data = await chrome.storage.local.get([STORAGE_KEY, TRACKED_TABS_KEY]);
+  _cachedCollections = data[STORAGE_KEY] || [];
+  _cachedTrackedTabs = data[TRACKED_TABS_KEY] || {};
   return {
-    collections: data[STORAGE_KEY] || [],
-    trackedTabs: data[TRACKED_TABS_KEY] || {}
+    collections: _cachedCollections,
+    trackedTabs: _cachedTrackedTabs
   };
 }
 
 /**
- * Helper: Save study collections back to local storage.
+ * Helper: Save study collections back to local storage with debouncing.
  */
-async function saveCollections(collections) {
-  await chrome.storage.local.set({ [STORAGE_KEY]: collections });
+async function saveCollections(collections, immediate = false) {
+  _cachedCollections = collections;
+  clearTimeout(_saveCollectionsTimer);
+
+  if (immediate) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: _cachedCollections });
+    return;
+  }
+
+  return new Promise((resolve) => {
+    _saveCollectionsTimer = setTimeout(async () => {
+      try {
+        if (_cachedCollections) {
+          await chrome.storage.local.set({ [STORAGE_KEY]: _cachedCollections });
+        }
+      } catch (_) {}
+      resolve();
+    }, 400);
+  });
 }
 
 /**
- * Helper: Save tracked tabs map back to local storage.
+ * Helper: Save tracked tabs map back to local storage with debouncing.
  */
-async function saveTrackedTabs(trackedTabs) {
-  await chrome.storage.local.set({ [TRACKED_TABS_KEY]: trackedTabs });
+async function saveTrackedTabs(trackedTabs, immediate = false) {
+  _cachedTrackedTabs = trackedTabs;
+  clearTimeout(_saveTrackedTimer);
+
+  if (immediate) {
+    await chrome.storage.local.set({ [TRACKED_TABS_KEY]: _cachedTrackedTabs });
+    return;
+  }
+
+  return new Promise((resolve) => {
+    _saveTrackedTimer = setTimeout(async () => {
+      try {
+        if (_cachedTrackedTabs) {
+          await chrome.storage.local.set({ [TRACKED_TABS_KEY]: _cachedTrackedTabs });
+        }
+      } catch (_) {}
+      resolve();
+    }, 250);
+  });
 }
+
+/**
+ * Helper: Flush any pending memory writes to disk immediately.
+ */
+async function flushStore() {
+  clearTimeout(_saveCollectionsTimer);
+  clearTimeout(_saveTrackedTimer);
+  const writes = [];
+  if (_cachedCollections !== null) {
+    writes.push(chrome.storage.local.set({ [STORAGE_KEY]: _cachedCollections }));
+  }
+  if (_cachedTrackedTabs !== null) {
+    writes.push(chrome.storage.local.set({ [TRACKED_TABS_KEY]: _cachedTrackedTabs }));
+  }
+  await Promise.all(writes);
+}
+
+/**
+ * Sync memory cache if storage is modified externally
+ */
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (changes[STORAGE_KEY]) {
+    _cachedCollections = changes[STORAGE_KEY].newValue || [];
+  }
+  if (changes[TRACKED_TABS_KEY]) {
+    _cachedTrackedTabs = changes[TRACKED_TABS_KEY].newValue || {};
+  }
+});
+
+/**
+ * Authoritative: Reconcile tracked tabs with the REAL browser tabs currently open.
+ * - Removes dead tab IDs from previous browser sessions or closed windows.
+ * - Auto-binds open browser tabs that match saved collection tabs (e.g. after browser restart with restored tabs).
+ */
+async function getLiveTrackedTabs() {
+  const { collections, trackedTabs } = await getStore();
+  
+  let allBrowserTabs = [];
+  try {
+    allBrowserTabs = await chrome.tabs.query({});
+  } catch (_) {
+    return trackedTabs;
+  }
+
+  const browserTabMap = new Map();
+  allBrowserTabs.forEach((t) => {
+    if (t.id) browserTabMap.set(t.id, t);
+  });
+
+  let modified = false;
+
+  // 1. Purge dead tab IDs that no longer exist in Chrome
+  for (const tabIdStr of Object.keys(trackedTabs)) {
+    const numId = Number(tabIdStr);
+    if (!browserTabMap.has(numId)) {
+      delete trackedTabs[tabIdStr];
+      modified = true;
+    }
+  }
+
+  // 2. Build index of collection tabs
+  const savedTabsByUrl = new Map();
+  function indexGroup(group) {
+    if (Array.isArray(group.tabs)) {
+      group.tabs.forEach((t) => {
+        const u = t.lastUrl || t.url;
+        if (u) {
+          savedTabsByUrl.set(u, { groupId: group.id, savedTab: t });
+        }
+      });
+    }
+    if (Array.isArray(group.subgroups)) {
+      group.subgroups.forEach(indexGroup);
+    }
+  }
+  collections.forEach(indexGroup);
+
+  // 3. Auto-match open tabs with collection tabs if not already tracked
+  const currentlyBoundSavedIds = new Set(
+    Object.values(trackedTabs).map((info) => info.savedTabId)
+  );
+
+  for (const tab of allBrowserTabs) {
+    if (!tab.id || !tab.url || trackedTabs[String(tab.id)]) continue;
+
+    // Match exact URL or canonical URL
+    let match = savedTabsByUrl.get(tab.url);
+    if (!match) {
+      for (const [savedUrl, info] of savedTabsByUrl.entries()) {
+        if (!currentlyBoundSavedIds.has(info.savedTab.id)) {
+          try {
+            const u1 = new URL(tab.url);
+            const u2 = new URL(savedUrl);
+            if (u1.origin === u2.origin && u1.pathname === u2.pathname) {
+              match = info;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (match && !currentlyBoundSavedIds.has(match.savedTab.id)) {
+      trackedTabs[String(tab.id)] = {
+        groupId: match.groupId,
+        savedTabId: match.savedTab.id,
+        pendingScrollY: match.savedTab.scrollY || 0
+      };
+      currentlyBoundSavedIds.add(match.savedTab.id);
+      modified = true;
+    }
+  }
+
+  if (modified) {
+    await saveTrackedTabs(trackedTabs, true);
+  }
+
+  return trackedTabs;
+}
+
+// Reconcile on extension/browser startup
+chrome.runtime.onStartup.addListener(() => {
+  getLiveTrackedTabs().catch(() => {});
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  getLiveTrackedTabs().catch(() => {});
+});
 
 /**
  * Helper: Locate a saved tab and its containing group within nested collections.
- * Recursively searches root collections and nested subgroups.
- * Tracks if any ancestor group has dynamic updates enabled.
  */
 function findGroupAndTab(groups, groupId, savedTabId, parentDynamic = false) {
   if (!Array.isArray(groups)) return {};
@@ -94,7 +272,8 @@ function getYouTubeVideoId(url) {
 }
 
 /**
- * Helper: Clean and format YouTube URLs for playlists and resume timestamps.
+ * Helper: Construct canonical clean YouTube URL that retains video ID,
+ * playlist context, and resume timestamp (&t=X).
  */
 function cleanYouTubeUrl(rawUrl, seconds = 0) {
   try {
@@ -102,20 +281,17 @@ function cleanYouTubeUrl(rawUrl, seconds = 0) {
     if (!parsed.hostname.includes("youtube.com")) return rawUrl;
 
     const videoId = parsed.searchParams.get("v");
-    if (!videoId) return rawUrl; // Channel, home, or playlist-only page
+    if (!videoId) return rawUrl;
 
     const playlistId = parsed.searchParams.get("list");
 
-    // Construct canonical watch URL
     const clean = new URL("https://www.youtube.com/watch");
     clean.searchParams.set("v", videoId);
 
-    // Keep playlist context if user is watching in a playlist
     if (playlistId) {
       clean.searchParams.set("list", playlistId);
     }
 
-    // Append playback resume timestamp if available
     if (Number.isFinite(seconds) && seconds > 0) {
       clean.searchParams.set("t", `${Math.floor(seconds)}s`);
     }
@@ -128,7 +304,6 @@ function cleanYouTubeUrl(rawUrl, seconds = 0) {
 
 /**
  * Update a tracked saved tab with latest URL, title, favicon, or video progress.
- * Only updates if dynamic update is enabled on the tab OR the containing group.
  */
 async function updateTrackedTab(tabId, changes = {}) {
   const { collections, trackedTabs } = await getStore();
@@ -137,18 +312,13 @@ async function updateTrackedTab(tabId, changes = {}) {
 
   const { group, savedTab, isGroupDynamic } = findGroupAndTab(collections, tracked.groupId, tracked.savedTabId);
   if (!savedTab) {
-    // If saved tab was deleted by user, untrack this tab
     delete trackedTabs[String(tabId)];
     await saveTrackedTabs(trackedTabs);
     return;
   }
 
-  // DYNAMIC TRACKING CHECK:
-  // Tab-level setting has highest priority: users can unselect individual tabs to stay static.
-  // If not explicitly set on the tab, it inherits from the containing folder.
   const isDynamic = typeof savedTab.dynamic === "boolean" ? savedTab.dynamic : isGroupDynamic;
   if (!isDynamic) {
-    // Tab is in static bookmark mode: preserve existing saved URL and timestamps
     return;
   }
 
@@ -163,12 +333,11 @@ async function updateTrackedTab(tabId, changes = {}) {
     savedTab.url = changes.url;
     savedTab.lastUrl = changes.url;
 
-    // If navigated to a completely different YouTube video, reset progress
     if (oldVideoId !== newVideoId) {
       savedTab.youtubeSeconds = 0;
+      savedTab.scrollY = 0;
     }
 
-    // Update thumbnail if it's YouTube
     if (newVideoId) {
       savedTab.thumbnail = `https://img.youtube.com/vi/${newVideoId}/mqdefault.jpg`;
     }
@@ -207,7 +376,6 @@ async function updateTrackedTab(tabId, changes = {}) {
 
 /**
  * Listener: Track standard tab updates (navigation, title changes, favicons).
- * Works across all websites (articles, docs, github, etc.)
  */
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const changes = {};
@@ -229,8 +397,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 /**
  * Listener: When a tab is closed in the browser.
- * Removes the open tab ID from `trackedTabs` mapping.
- * The saved collection item remains safely preserved in storage!
  */
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const { trackedTabs } = await getStore();
@@ -244,8 +410,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
  * Listener: Handle messages sent from popup.js or content scripts.
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // 0. Generic SPA navigation (animepahe, crunchyroll, any history.pushState site)
-  //    Fired by spa-content.js which patches pushState/replaceState on ALL pages.
+  // 0. Generic SPA navigation
   if (message?.type === "spa-navigated" && sender.tab?.id) {
     updateTrackedTab(sender.tab.id, {
       url: message.url,
@@ -256,7 +421,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // 1. YouTube Video Navigated (Playlist next/prev, clicked video)
+  // 1. YouTube Video Navigated
   if (message?.type === "youtube-navigated" && sender.tab?.id) {
     updateTrackedTab(sender.tab.id, {
       url: message.url,
@@ -278,14 +443,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // 3. Register a tab for tracking (Enforces 1-to-1 Mapping Protocol)
+  // 3. Register a tab for tracking (single)
   if (message?.type === "track-saved-tab") {
     getStore()
-      .then(({ trackedTabs }) => {
-        // PROTOCOL PRECAUTION: Single Active Binding
-        // A collection item can only be bound dynamically to ONE open browser tab at a time.
-        // If another tab was previously bound to this savedTabId, remove that old mapping
-        // so multiple open tabs cannot fight or clobber each other's state.
+      .then(async ({ trackedTabs }) => {
         for (const [existingTabId, info] of Object.entries(trackedTabs)) {
           if (info.savedTabId === message.savedTabId && existingTabId !== String(message.tabId)) {
             delete trackedTabs[existingTabId];
@@ -293,38 +454,112 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         trackedTabs[String(message.tabId)] = {
           groupId: message.groupId,
-          savedTabId: message.savedTabId
+          savedTabId: message.savedTabId,
+          pendingScrollY: message.scrollY || 0
         };
-        return saveTrackedTabs(trackedTabs);
+        await saveTrackedTabs(trackedTabs, true);
+        sendResponse({ ok: true });
       })
-      .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  // 3-batch. Register multiple tabs in a single atomic batch (prevents race conditions)
+  if (message?.type === "track-saved-tabs-batch") {
+    getStore()
+      .then(async ({ trackedTabs }) => {
+        if (Array.isArray(message.items)) {
+          for (const item of message.items) {
+            for (const [existingTabId, info] of Object.entries(trackedTabs)) {
+              if (info.savedTabId === item.savedTabId && existingTabId !== String(item.tabId)) {
+                delete trackedTabs[existingTabId];
+              }
+            }
+            trackedTabs[String(item.tabId)] = {
+              groupId: item.groupId,
+              savedTabId: item.savedTabId,
+              pendingScrollY: item.scrollY || 0
+            };
+          }
+          await saveTrackedTabs(trackedTabs, true);
+        }
+        sendResponse({ ok: true });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  // 3a. Content script requests pending scroll target for this tab (called on page load)
+  if (message?.type === "get-pending-scroll" && sender.tab?.id) {
+    getStore()
+      .then(({ collections, trackedTabs }) => {
+        const tracked = trackedTabs[String(sender.tab.id)];
+        let scrollY = tracked?.pendingScrollY || 0;
+        if (!scrollY && tracked) {
+          const { savedTab } = findGroupAndTab(collections, tracked.groupId, tracked.savedTabId);
+          if (savedTab?.scrollY) {
+            scrollY = savedTab.scrollY;
+          }
+        }
+        sendResponse({ ok: true, scrollY });
+      })
+      .catch(() => sendResponse({ ok: true, scrollY: 0 }));
+    return true;
+  }
+
+  // 3b. Content script reports current scroll position for the tracked tab
+  if (message?.type === "save-scroll-position" && sender.tab?.id) {
+    getStore()
+      .then(async ({ collections, trackedTabs }) => {
+        const tracked = trackedTabs[String(sender.tab.id)];
+        if (!tracked) return sendResponse({ ok: false });
+        const { savedTab, isGroupDynamic } = findGroupAndTab(collections, tracked.groupId, tracked.savedTabId);
+        if (savedTab) {
+          const isDynamic = typeof savedTab.dynamic === "boolean" ? savedTab.dynamic : isGroupDynamic;
+          if (isDynamic) {
+            savedTab.scrollY = Math.round(message.scrollY || 0);
+            savedTab.updatedAt = Date.now();
+            await saveCollections(collections);
+          }
+        }
+        sendResponse({ ok: true });
+      })
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
 
   // 4. Untrack a tab
   if (message?.type === "untrack-saved-tab") {
     getStore()
-      .then(({ trackedTabs }) => {
+      .then(async ({ trackedTabs }) => {
         delete trackedTabs[String(message.tabId)];
-        return saveTrackedTabs(trackedTabs);
+        await saveTrackedTabs(trackedTabs, true);
+        sendResponse({ ok: true });
       })
-      .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
-  // 5. Query active tracked tab mappings (used by popup to show live "Active" badges)
+  // 5. Query active tracked tab mappings (guaranteed reconciled with live browser tabs)
   if (message?.type === "get-tracked-tabs") {
-    getStore()
-      .then(({ trackedTabs }) => {
+    getLiveTrackedTabs()
+      .then((trackedTabs) => {
         sendResponse({ ok: true, trackedTabs });
       })
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
-  // 6. Capture visible tab thumbnail (Microsoft Collections style)
+  // 6. Clear all tracked tabs (called when "Close Tracked" button executes)
+  if (message?.type === "clear-all-tracked-tabs") {
+    _cachedTrackedTabs = {};
+    saveTrackedTabs({}, true)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  // 7. Capture visible tab thumbnail
   if (message?.type === "capture-tab-thumbnail") {
     const windowId = message.windowId || null;
     try {
@@ -338,6 +573,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } catch (err) {
       sendResponse({ ok: false, error: err.message });
     }
+    return true;
+  }
+
+  // 8. Flush memory cache to disk immediately
+  if (message?.type === "flush-store") {
+    flushStore()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 

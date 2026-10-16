@@ -54,6 +54,7 @@ const els = {
   quickAddCurrentBtn: document.getElementById("quickAddCurrentBtn"),
   openPickerBtn: document.getElementById("openPickerBtn"),
   openFullTabBtn: document.getElementById("openFullTabBtn"),
+  closeTrackedTabsBtn: document.getElementById("closeTrackedTabsBtn"),
   menuToggleBtn: document.getElementById("menuToggleBtn"),
   moreMenu: document.getElementById("moreMenu"),
   exportBtn: document.getElementById("exportBtn"),
@@ -80,8 +81,18 @@ const els = {
   cancelPickerBtn: document.getElementById("cancelPickerBtn"),
   pickerTargetGroup: document.getElementById("pickerTargetGroup"),
   selectAllTabsBtn: document.getElementById("selectAllTabsBtn"),
+  deselectAllTabsBtn: document.getElementById("deselectAllTabsBtn"),
+  selectCurrentTabOnlyBtn: document.getElementById("selectCurrentTabOnlyBtn"),
   pickerTabsList: document.getElementById("pickerTabsList"),
   confirmAddTabsBtn: document.getElementById("confirmAddTabsBtn"),
+  confirmAddCurrentTabBtn: document.getElementById("confirmAddCurrentTabBtn"),
+
+  // Context Menu
+  tabContextMenu: document.getElementById("tabContextMenu"),
+  contextOpenNewWindow: document.getElementById("contextOpenNewWindow"),
+  contextToggleDynamic: document.getElementById("contextToggleDynamic"),
+  contextToggleDynamicLabel: document.getElementById("contextToggleDynamicLabel"),
+  contextDeleteTab: document.getElementById("contextDeleteTab"),
 
   // Quick Add Active Tab Modal
   quickAddModal: document.getElementById("quickAddModal"),
@@ -93,6 +104,19 @@ const els = {
   activeTabPreview: document.getElementById("activeTabPreview"),
   quickAddTargetGroup: document.getElementById("quickAddTargetGroup"),
   confirmQuickAddBtn: document.getElementById("confirmQuickAddBtn"),
+
+  // Move Tab Modal
+  moveModal: document.getElementById("moveModal"),
+  closeMoveBtn: document.getElementById("closeMoveBtn"),
+  closeMoveBackdrop: document.getElementById("closeMoveBackdrop"),
+  cancelMoveBtn: document.getElementById("cancelMoveBtn"),
+  moveTabTitle: document.getElementById("moveTabTitle"),
+  moveTabUrl: document.getElementById("moveTabUrl"),
+  moveTabFavicon: document.getElementById("moveTabFavicon"),
+  moveModalGroupsList: document.getElementById("moveModalGroupsList"),
+
+  // Toast Notification
+  toastNotification: document.getElementById("toastNotification"),
 
   // Create Sub-folder Modal
   subfolderModal: document.getElementById("subfolderModal"),
@@ -263,6 +287,38 @@ function findGroupById(groups, id) {
 }
 
 /**
+ * Locate direct parent group of a subgroup
+ */
+function findParentGroup(groups, targetId, parent = null) {
+  if (!Array.isArray(groups)) return undefined;
+  for (const g of groups) {
+    if (g.id === targetId) return parent;
+    if (Array.isArray(g.subgroups) && g.subgroups.length > 0) {
+      const found = findParentGroup(g.subgroups, targetId, g);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * When any tab or subgroup is manually set to non-dynamic,
+ * turn off the dynamic button on its group and all ancestor groups.
+ */
+function updateAncestorsDynamicStateOnDisable(groupId) {
+  let currentId = groupId;
+  while (currentId) {
+    const group = findGroupById(collections, currentId);
+    if (group) {
+      group.dynamic = false;
+      group.updatedAt = Date.now();
+    }
+    const parent = findParentGroup(collections, currentId);
+    currentId = parent ? parent.id : null;
+  }
+}
+
+/**
  * Recursively find the parent array and index of a group
  */
 function findGroupContainer(groups, id) {
@@ -381,12 +437,13 @@ async function loadState() {
       g.subgroups.forEach((sub) => { sub.dynamic = true; });
     }
 
-    // Normalize tabs
+    // Normalize tabs (skip heavy thumbnail re-compute on every popup open)
     g.tabs.forEach((t) => {
       if (!t.id) t.id = uid();
       if (typeof t.dynamic !== "boolean") t.dynamic = g.dynamic;
-      if (!t.thumbnail) {
-        t.thumbnail = getYouTubeThumbnail(t.url) || null;
+      if (!t.thumbnail && t.url) {
+        const ytThumb = getYouTubeThumbnail(t.url);
+        if (ytThumb) t.thumbnail = ytThumb;
       }
     });
 
@@ -400,15 +457,19 @@ async function loadState() {
     await chrome.storage.local.set({ _dynamicV2: true, [STORAGE_KEY]: collections });
   }
 
-  const rawTracked = data[TRACKED_TABS_KEY] || {};
-  activeTrackedMap = {};
-
-  // Invert trackedTabs map: savedTabId -> open tabId
-  Object.entries(rawTracked).forEach(([tabId, tracked]) => {
-    if (tracked?.savedTabId) {
-      activeTrackedMap[tracked.savedTabId] = Number(tabId);
-    }
-  });
+  // Query live reconciled tracked tabs from background service worker (guarantees in sync with real browser tabs)
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "get-tracked-tabs" });
+    const liveTracked = res?.trackedTabs || {};
+    activeTrackedMap = {};
+    Object.entries(liveTracked).forEach(([tabId, tracked]) => {
+      if (tracked?.savedTabId) {
+        activeTrackedMap[tracked.savedTabId] = Number(tabId);
+      }
+    });
+  } catch (_) {
+    activeTrackedMap = {};
+  }
 }
 
 /**
@@ -441,13 +502,14 @@ async function loadOpenTabs() {
 /**
  * Send a message to background service worker to track a tab
  */
-async function trackSavedTab(tabId, groupId, savedTabId) {
+async function trackSavedTab(tabId, groupId, savedTabId, scrollY = 0) {
   try {
     await chrome.runtime.sendMessage({
       type: "track-saved-tab",
       tabId: tabId,
       groupId: groupId,
-      savedTabId: savedTabId
+      savedTabId: savedTabId,
+      scrollY: scrollY
     });
     activeTrackedMap[savedTabId] = tabId;
   } catch (err) {
@@ -458,6 +520,27 @@ async function trackSavedTab(tabId, groupId, savedTabId) {
 /**
  * Untrack a tab when removed
  */
+
+/**
+ * Send a message to background service worker to track multiple tabs in one atomic batch
+ */
+async function trackSavedTabsBatch(items = []) {
+  if (!items || items.length === 0) return;
+  try {
+    await chrome.runtime.sendMessage({
+      type: "track-saved-tabs-batch",
+      items: items
+    });
+    items.forEach((item) => {
+      if (item.savedTabId && item.tabId) {
+        activeTrackedMap[item.savedTabId] = item.tabId;
+      }
+    });
+  } catch (err) {
+    console.warn("Could not register tracking batch with background:", err);
+  }
+}
+
 async function untrackSavedTab(tabId) {
   try {
     await chrome.runtime.sendMessage({
@@ -623,6 +706,19 @@ function renderStats() {
   } else {
     els.statsLine.textContent = `${totalCollections} ${totalCollections === 1 ? "collection" : "collections"} · ${totalTabs} tabs (${activeCount} active)`;
   }
+
+  if (els.closeTrackedTabsBtn) {
+    const textSpan = els.closeTrackedTabsBtn.querySelector("span");
+    if (textSpan) {
+      textSpan.textContent = activeCount > 0 ? `Close Tracked (${activeCount})` : "Close Tracked";
+    }
+    els.closeTrackedTabsBtn.title = activeCount > 0
+      ? `Save state and close ${activeCount} currently open tracked tab${activeCount !== 1 ? 's' : ''}`
+      : "No tracked tabs are currently open in the browser";
+    els.closeTrackedTabsBtn.style.opacity = activeCount > 0 ? "1" : "0.5";
+    els.closeTrackedTabsBtn.style.pointerEvents = activeCount > 0 ? "auto" : "none";
+    els.closeTrackedTabsBtn.style.cursor = activeCount > 0 ? "pointer" : "default";
+  }
 }
 
 /**
@@ -662,6 +758,7 @@ function renderGroupSelectOptions() {
  * Render all root collections and nested folders
  */
 function renderGroups() {
+  const prevScrollTop = els.groupsContainer ? els.groupsContainer.scrollTop : 0;
   els.groupsContainer.innerHTML = "";
 
   const query = searchQuery.trim().toLowerCase();
@@ -728,9 +825,10 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
     node.classList.remove("is-collapsed");
   }
 
-  // 1. Prominent Left Color Code Region Fill (Matching User Sketch)
-  const colorBlock = node.querySelector(".group-header-color-block");
-  const folderIcon = node.querySelector(".group-folder-icon");
+  // 1. Prominent Left Color Code Region Fill (Directly scoped to this group header)
+  const groupHeader = node.querySelector(":scope > .group-header");
+  const colorBlock = groupHeader?.querySelector(".group-header-color-block");
+  const folderIcon = groupHeader?.querySelector(".group-folder-icon");
   const groupColor = group.color || parentGroup?.color || DEFAULT_COLORS[0];
 
   if (colorBlock) {
@@ -738,15 +836,13 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
   }
 
   if (isSubfolder) {
-    folderIcon.classList.remove("hidden");
+    folderIcon?.classList.remove("hidden");
   } else {
-    folderIcon.classList.add("hidden");
+    folderIcon?.classList.add("hidden");
   }
 
   // Header Click Handler for Dropdown Expand / Collapse
-  const groupHeader = node.querySelector(".group-header");
-  groupHeader.addEventListener("click", (e) => {
-    // Ignore clicks on explicit controls: buttons, rename input, or drag handles
+  groupHeader?.addEventListener("click", (e) => {
     if (e.target.closest("button, input, .group-drag-handle")) {
       return;
     }
@@ -760,97 +856,101 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
   });
 
   // 2. Group Thumbnail / Cover Button
-  const thumbBtn = node.querySelector(".group-thumb-btn");
-  const thumbImg = node.querySelector(".group-thumb-img");
-  const thumbPlaceholder = node.querySelector(".group-thumb-placeholder");
+  const thumbBtn = groupHeader?.querySelector(".group-thumb-btn");
+  const thumbImg = groupHeader?.querySelector(".group-thumb-img");
+  const thumbPlaceholder = groupHeader?.querySelector(".group-thumb-placeholder");
 
-  // Determine group thumbnail (explicit cover, or fallback to first tab's thumbnail)
   const coverUrl = group.thumbnail || (group.tabs?.find((t) => t.thumbnail)?.thumbnail) || null;
 
-  if (coverUrl) {
+  if (coverUrl && thumbImg && thumbPlaceholder) {
     thumbImg.src = coverUrl;
     thumbImg.classList.remove("hidden");
     thumbPlaceholder.classList.add("hidden");
-  } else {
+  } else if (thumbImg && thumbPlaceholder) {
     thumbImg.classList.add("hidden");
     thumbPlaceholder.classList.remove("hidden");
   }
 
-  thumbBtn.addEventListener("click", (e) => {
+  thumbBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     openThumbnailModal(group.id);
   });
 
   // 3. Title Input (inline rename)
-  const titleInput = node.querySelector(".group-title-input");
-  titleInput.value = group.name;
-  titleInput.addEventListener("change", async () => {
-    const newName = titleInput.value.trim();
-    if (newName) {
-      group.name = newName;
-      group.updatedAt = Date.now();
-      await saveCollections();
-      renderStats();
-      renderGroupSelectOptions();
-    } else {
-      titleInput.value = group.name;
-    }
-  });
-
-  // 4. Tab Count Pill
-  const countPill = node.querySelector(".group-tab-count");
-  const totalTabs = (group.tabs?.length || 0);
-  countPill.textContent = `${totalTabs} ${totalTabs === 1 ? "tab" : "tabs"}`;
-
-  // 5. Dynamic Folder Toggle Badge
-  const dynamicToggleBtn = node.querySelector(".group-dynamic-toggle-btn");
-  const isGroupDynamic = Boolean(group.dynamic);
-
-  if (isGroupDynamic) {
-    dynamicToggleBtn.classList.add("is-active");
-    dynamicToggleBtn.title = isSubfolder
-      ? "Dynamic tracking is ON for this sub-folder. Click to make static bookmark."
-      : "Dynamic tracking is ON for this collection. All content syncs live. Click to turn off.";
-  } else {
-    dynamicToggleBtn.classList.remove("is-active");
-    dynamicToggleBtn.title = isSubfolder
-      ? "Dynamic tracking is OFF for this sub-folder. Click to make all content dynamic."
-      : "Dynamic tracking is OFF for this collection. Click to make all content dynamic.";
+  const titleInput = groupHeader?.querySelector(".group-title-input");
+  if (titleInput) {
+    titleInput.value = group.name;
+    titleInput.addEventListener("change", async () => {
+      const newName = titleInput.value.trim();
+      if (newName) {
+        group.name = newName;
+        group.updatedAt = Date.now();
+        await saveCollections();
+        renderStats();
+        renderGroupSelectOptions();
+      } else {
+        titleInput.value = group.name;
+      }
+    });
   }
 
-  dynamicToggleBtn.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    const nextState = !isGroupDynamic;
-    setDynamicRecursively(group, nextState);
-    await saveCollections();
-    render();
-  });
+  // 4. Tab Count Pill
+  const countPill = groupHeader?.querySelector(".group-tab-count");
+  const totalTabs = (group.tabs?.length || 0);
+  if (countPill) {
+    countPill.textContent = `${totalTabs} ${totalTabs === 1 ? "tab" : "tabs"}`;
+  }
+
+  // 5. Dynamic Folder Toggle Badge
+  const dynamicToggleBtn = groupHeader?.querySelector(".group-dynamic-toggle-btn");
+  const isGroupDynamic = Boolean(group.dynamic);
+
+  if (dynamicToggleBtn) {
+    if (isGroupDynamic) {
+      dynamicToggleBtn.classList.add("is-active");
+      dynamicToggleBtn.title = isSubfolder
+        ? "Dynamic tracking is ON for this sub-folder. Click to make static bookmark."
+        : "Dynamic tracking is ON for this collection. All content syncs live. Click to turn off.";
+    } else {
+      dynamicToggleBtn.classList.remove("is-active");
+      dynamicToggleBtn.title = isSubfolder
+        ? "Dynamic tracking is OFF for this sub-folder. Click to make all content dynamic."
+        : "Dynamic tracking is OFF for this collection. Click to make all content dynamic.";
+    }
+
+    dynamicToggleBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const nextState = !isGroupDynamic;
+      setDynamicRecursively(group, nextState);
+      if (!nextState) {
+        updateAncestorsDynamicStateOnDisable(group.id);
+      }
+      await saveCollections();
+      render();
+    });
+  }
 
   // 6. Header Actions
-  // Add Sub-folder
-  const addSubgroupBtn = node.querySelector(".group-add-subgroup-btn");
-  addSubgroupBtn.addEventListener("click", (e) => {
+  const addSubgroupBtn = groupHeader?.querySelector(".group-add-subgroup-btn");
+  addSubgroupBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     openSubfolderModal(group.id, group.name);
   });
 
-  // Add tabs
-  const addTabBtn = node.querySelector(".group-add-tab-btn");
-  addTabBtn.addEventListener("click", (e) => {
+  const addTabBtn = groupHeader?.querySelector(".group-add-tab-btn");
+  addTabBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     openPickerModal(group.id);
   });
 
-  // Restore all tabs in this group & sub-folders
-  const restoreBtn = node.querySelector(".group-restore-btn");
-  restoreBtn.addEventListener("click", (e) => {
+  const restoreBtn = groupHeader?.querySelector(".group-restore-btn");
+  restoreBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     restoreAllTabs(group);
   });
 
-  // Delete group / sub-folder
-  const deleteBtn = node.querySelector(".group-delete-btn");
-  deleteBtn.addEventListener("click", async (e) => {
+  const deleteBtn = groupHeader?.querySelector(".group-delete-btn");
+  deleteBtn?.addEventListener("click", async (e) => {
     e.stopPropagation();
     const typeLabel = isSubfolder ? "sub-folder" : "collection";
     if (confirm(`Delete ${typeLabel} "${group.name}" and all its saved tabs?`)) {
@@ -861,39 +961,82 @@ function createGroupElement(group, depth = 0, parentGroup = null) {
   // 7. Drag & Drop Reordering for Groups
   setupGroupDragAndDrop(node, group, parentGroup);
 
-  // 8. Render Sub-folders Container
-  const subgroupsContainer = node.querySelector(".group-subgroups-container");
-  if (Array.isArray(group.subgroups) && group.subgroups.length > 0) {
+  // Drop Tab directly onto group card or header
+  [node, groupHeader].forEach((targetEl) => {
+    if (!targetEl) return;
+    targetEl.addEventListener("dragover", (e) => {
+      if (!draggedTabId || draggedTabSourceGroupId === group.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      node.classList.add("drop-tab-target");
+    });
+
+    targetEl.addEventListener("dragleave", (e) => {
+      if (!node.contains(e.relatedTarget)) {
+        node.classList.remove("drop-tab-target");
+      }
+    });
+
+    targetEl.addEventListener("drop", async (e) => {
+      if (!draggedTabId || draggedTabSourceGroupId === group.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      node.classList.remove("drop-tab-target");
+
+      const sourceId = draggedTabSourceGroupId;
+      const tabIdToMove = draggedTabId;
+      draggedTabId = null;
+      draggedTabSourceGroupId = null;
+
+      await moveTabToGroup(sourceId, group.id, tabIdToMove);
+    });
+  });
+
+
+  // 8. Render Sub-folders Container (Scoped directly to this node's direct child)
+  const subgroupsContainer = node.querySelector(":scope > .group-subgroups-container");
+  if (subgroupsContainer && Array.isArray(group.subgroups) && group.subgroups.length > 0) {
     group.subgroups.forEach((sub) => {
       const subNode = createGroupElement(sub, depth + 1, group);
       subgroupsContainer.append(subNode);
     });
   }
 
-  // 9. Render Saved Tabs
-  const tabsList = node.querySelector(".group-tabs-list");
-  setupTabsListDropTarget(tabsList, group);
+  // 9. Render Saved Tabs (CRITICAL: Scoped to direct child :scope > .group-tabs-list)
+  const tabsList = node.querySelector(":scope > .group-tabs-list");
+  if (tabsList) {
+    setupTabsListDropTarget(tabsList, group);
 
-  if (!group.tabs || group.tabs.length === 0) {
-    if (!group.subgroups || group.subgroups.length === 0) {
+    // Scroll Chaining: scroll outer groups-container when inner list reaches boundaries
+    tabsList.addEventListener("wheel", (e) => {
+      const atBottom = e.deltaY > 0 && Math.ceil(tabsList.scrollTop + tabsList.clientHeight) >= (tabsList.scrollHeight - 1);
+      const atTop = e.deltaY < 0 && tabsList.scrollTop <= 0;
+      if (atBottom || atTop) {
+        els.groupsContainer.scrollTop += e.deltaY;
+      }
+    }, { passive: true });
+
+    if (!group.tabs || group.tabs.length === 0) {
       const emptyNote = document.createElement("div");
       emptyNote.className = "group-tabs-empty";
-      emptyNote.textContent = "No tabs saved yet. Click '+' to add tabs.";
+      emptyNote.textContent = isSubfolder
+        ? "Subgroup is empty. Drag tabs here or click '+' to add."
+        : "No tabs saved yet. Click '+' to add tabs.";
       tabsList.append(emptyNote);
-    }
-  } else {
-    group.tabs.forEach((savedTab) => {
-      // Filter tabs if searching
-      const query = searchQuery.trim().toLowerCase();
-      if (query) {
-        const matchTitle = savedTab.title && savedTab.title.toLowerCase().includes(query);
-        const matchUrl = savedTab.url && savedTab.url.toLowerCase().includes(query);
-        if (!matchTitle && !matchUrl) return;
-      }
+    } else {
+      group.tabs.forEach((savedTab) => {
+        const query = searchQuery.trim().toLowerCase();
+        if (query) {
+          const matchTitle = savedTab.title && savedTab.title.toLowerCase().includes(query);
+          const matchUrl = savedTab.url && savedTab.url.toLowerCase().includes(query);
+          if (!matchTitle && !matchUrl) return;
+        }
 
-      const tabNode = renderSavedTabItem(group, savedTab);
-      tabsList.append(tabNode);
-    });
+        const tabNode = renderSavedTabItem(group, savedTab);
+        tabsList.append(tabNode);
+      });
+    }
   }
 
   return node;
@@ -983,11 +1126,33 @@ function renderSavedTabItem(group, savedTab) {
 
   dynamicBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
-    savedTab.dynamic = !isTabDynamic;
+    const nextTabDynamic = !isTabDynamic;
+    savedTab.dynamic = nextTabDynamic;
     savedTab.updatedAt = Date.now();
     group.updatedAt = Date.now();
+
+    if (!nextTabDynamic) {
+      // Tab manually set to non-dynamic: turn off dynamic button on this group & all ancestor groups
+      updateAncestorsDynamicStateOnDisable(group.id);
+    }
     await saveCollections();
     render();
+  });
+
+  // Move Tab button click -> Opens dedicated Move Tab modal
+  const moveBtn = node.querySelector(".move-tab-btn");
+  if (moveBtn) {
+    moveBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openMoveModal(group, savedTab);
+    });
+  }
+
+  // Right-click Context Menu on tab card
+  node.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showTabContextMenu(e, group, savedTab);
   });
 
   // 6. Click card to open or focus tab
@@ -1283,6 +1448,332 @@ function setupTabsListDropTarget(tabsList, group) {
   });
 }
 
+
+/* ==========================================================================
+   Tab Context Menu & Move Tab Helpers
+   ========================================================================== */
+
+let currentContextMenuTab = null;
+let currentContextMenuGroup = null;
+
+function showTabContextMenu(e, group, savedTab) {
+  if (!els.tabContextMenu) return;
+  currentContextMenuTab = savedTab;
+  currentContextMenuGroup = group;
+
+  const headerFavicon = els.tabContextMenu.querySelector(".context-menu-favicon");
+  const headerTitle = els.tabContextMenu.querySelector(".context-menu-title");
+  const groupsList = els.tabContextMenu.querySelector(".context-menu-groups-list");
+
+  if (headerFavicon) {
+    if (savedTab.favIconUrl) {
+      headerFavicon.style.backgroundImage = `url("${savedTab.favIconUrl}")`;
+      headerFavicon.textContent = "";
+    } else {
+      headerFavicon.style.backgroundImage = "";
+      headerFavicon.textContent = (savedTab.title || "T").charAt(0).toUpperCase();
+    }
+  }
+
+  if (headerTitle) {
+    headerTitle.textContent = savedTab.title || savedTab.url;
+    headerTitle.title = savedTab.title || savedTab.url;
+  }
+
+  if (els.contextToggleDynamicLabel) {
+    els.contextToggleDynamicLabel.textContent = savedTab.dynamic ? "Make Tab Static" : "Make Tab Dynamic";
+  }
+
+  if (groupsList) {
+    groupsList.innerHTML = "";
+    const allGroups = getAllGroupsFlat(collections);
+
+    if (allGroups.length === 0) {
+      groupsList.innerHTML = `<div style="padding: 8px 14px; color: var(--text-muted); font-size: 11.5px;">No folders available.</div>`;
+    } else {
+      allGroups.forEach(({ group: destGroup, depth, label }) => {
+        const btn = document.createElement("button");
+        btn.className = "context-menu-dest-item";
+        btn.type = "button";
+
+        const isCurrent = (destGroup.id === group.id);
+        if (isCurrent) {
+          btn.disabled = true;
+        }
+
+        const indentPx = Math.min(depth * 14, 42);
+        btn.style.paddingLeft = `${14 + indentPx}px`;
+
+        const colorDot = document.createElement("span");
+        colorDot.className = "context-dest-color-dot";
+        colorDot.style.backgroundColor = destGroup.color || DEFAULT_COLORS[0];
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "context-dest-name";
+        nameSpan.textContent = destGroup.name;
+
+        btn.append(colorDot, nameSpan);
+
+        if (isCurrent) {
+          const currentBadge = document.createElement("span");
+          currentBadge.className = "context-dest-current";
+          currentBadge.textContent = "(Current)";
+          btn.append(currentBadge);
+        } else {
+          const countBadge = document.createElement("span");
+          countBadge.className = "context-dest-badge";
+          countBadge.textContent = `${destGroup.tabs?.length || 0} tabs`;
+          btn.append(countBadge);
+
+          btn.addEventListener("click", async () => {
+            hideTabContextMenu();
+            await moveTabToGroup(group.id, destGroup.id, savedTab.id);
+          });
+        }
+
+        groupsList.append(btn);
+      });
+    }
+  }
+
+  els.tabContextMenu.classList.remove("hidden");
+  const menuWidth = els.tabContextMenu.offsetWidth || 260;
+  const menuHeight = els.tabContextMenu.offsetHeight || 280;
+  const winWidth = window.innerWidth;
+  const winHeight = window.innerHeight;
+
+  let left = e.clientX;
+  let top = e.clientY;
+
+  if (left + menuWidth > winWidth - 10) {
+    left = Math.max(10, winWidth - menuWidth - 10);
+  }
+  if (top + menuHeight > winHeight - 10) {
+    top = Math.max(10, winHeight - menuHeight - 10);
+  }
+
+  els.tabContextMenu.style.left = `${left}px`;
+  els.tabContextMenu.style.top = `${top}px`;
+}
+
+function hideTabContextMenu() {
+  if (els.tabContextMenu) {
+    els.tabContextMenu.classList.add("hidden");
+  }
+  currentContextMenuTab = null;
+  currentContextMenuGroup = null;
+}
+
+/**
+ * Move a tab from one group/subgroup to another group/subgroup
+ */
+
+/* ==========================================================================
+   Toast Notification & Move Tab Modal
+   ========================================================================== */
+
+let _toastTimer = null;
+function showToast(message) {
+  const toast = els.toastNotification || document.getElementById("toastNotification");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.remove("hidden");
+  toast.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.classList.add("hidden"), 220);
+  }, 2400);
+}
+
+function openMoveModal(sourceGroup, savedTab) {
+  if (!els.moveModal) return;
+  currentContextMenuTab = savedTab;
+  currentContextMenuGroup = sourceGroup;
+
+  if (els.moveTabTitle) {
+    els.moveTabTitle.textContent = savedTab.title || savedTab.url;
+  }
+  if (els.moveTabUrl) {
+    els.moveTabUrl.textContent = displayDomain(savedTab.lastUrl || savedTab.url);
+  }
+
+  if (els.moveTabFavicon) {
+    if (savedTab.favIconUrl) {
+      els.moveTabFavicon.style.backgroundImage = `url("${savedTab.favIconUrl}")`;
+      els.moveTabFavicon.textContent = "";
+    } else {
+      els.moveTabFavicon.style.backgroundImage = "";
+      els.moveTabFavicon.textContent = (savedTab.title || "T").charAt(0).toUpperCase();
+    }
+  }
+
+  if (els.moveModalGroupsList) {
+    els.moveModalGroupsList.innerHTML = "";
+    const allGroups = getAllGroupsFlat(collections);
+
+    if (allGroups.length === 0) {
+      els.moveModalGroupsList.innerHTML = `<div style="padding: 12px; color: var(--text-muted); font-size: 12px; text-align: center;">No folders found.</div>`;
+    } else {
+      allGroups.forEach(({ group: destGroup, depth }) => {
+        const btn = document.createElement("button");
+        btn.className = "move-dest-btn";
+        btn.type = "button";
+
+        const isCurrent = (destGroup.id === sourceGroup.id);
+        if (isCurrent) {
+          btn.disabled = true;
+        }
+
+        const indentPx = Math.min(depth * 14, 42);
+        btn.style.paddingLeft = `${12 + indentPx}px`;
+
+        const left = document.createElement("div");
+        left.className = "move-dest-left";
+
+        const dot = document.createElement("span");
+        dot.className = "move-dest-dot";
+        dot.style.backgroundColor = destGroup.color || DEFAULT_COLORS[0];
+
+        const name = document.createElement("span");
+        name.className = "move-dest-name";
+        name.textContent = destGroup.name;
+
+        left.append(dot, name);
+        btn.append(left);
+
+        if (isCurrent) {
+          const badge = document.createElement("span");
+          badge.className = "move-dest-current-badge";
+          badge.textContent = "Current Folder";
+          btn.append(badge);
+        } else {
+          const badge = document.createElement("span");
+          badge.className = "move-dest-badge";
+          badge.textContent = `${destGroup.tabs?.length || 0} tabs`;
+          btn.append(badge);
+
+          btn.addEventListener("click", async () => {
+            closeMoveModal();
+            await moveTabToGroup(sourceGroup.id, destGroup.id, savedTab.id);
+          });
+        }
+
+        els.moveModalGroupsList.append(btn);
+      });
+    }
+  }
+
+  els.moveModal.classList.remove("hidden");
+}
+
+function closeMoveModal() {
+  if (els.moveModal) {
+    els.moveModal.classList.add("hidden");
+  }
+}
+
+async function moveTabToGroup(sourceGroupId, targetGroupId, savedTabId) {
+  if (!sourceGroupId || !targetGroupId || sourceGroupId === targetGroupId) return;
+
+  const sourceGroup = findGroupById(collections, sourceGroupId);
+  const targetGroup = findGroupById(collections, targetGroupId);
+  if (!sourceGroup || !targetGroup) return;
+
+  if (!Array.isArray(targetGroup.tabs)) {
+    targetGroup.tabs = [];
+  }
+
+  const sourceIndex = sourceGroup.tabs.findIndex((t) => t.id === savedTabId);
+  if (sourceIndex === -1) return;
+
+  const [movedTab] = sourceGroup.tabs.splice(sourceIndex, 1);
+  targetGroup.tabs.unshift(movedTab);
+
+  const openTabId = activeTrackedMap[movedTab.id];
+  if (openTabId) {
+    await trackSavedTab(openTabId, targetGroup.id, movedTab.id);
+  }
+
+  targetGroup.updatedAt = Date.now();
+  sourceGroup.updatedAt = Date.now();
+
+  // Expand destination group and ALL its ancestor groups so moved tab is visible
+  let curr = targetGroup;
+  while (curr) {
+    expandedGroupIds.add(curr.id);
+    curr = curr.parentId ? findGroupById(collections, curr.parentId) : null;
+  }
+
+  await saveCollections();
+  render();
+
+  // Scroll to moved tab & flash highlight
+  setTimeout(() => {
+    const tabEl = document.querySelector(`[data-saved-tab-id="${savedTabId}"]`);
+    if (tabEl) {
+      tabEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      tabEl.classList.add("just-moved");
+      setTimeout(() => tabEl.classList.remove("just-moved"), 2000);
+    }
+  }, 60);
+
+  showToast(`✓ Moved "${movedTab.title || 'Tab'}" to "${targetGroup.name}"`);
+}
+
+/**
+ * Directly add the current active browser tab to a designated group/subgroup
+ */
+async function addActiveTabDirectlyToGroup(targetGroupId) {
+  if (!currentActiveTab) {
+    await loadOpenTabs();
+  }
+  if (!currentActiveTab) return;
+
+  const targetGroup = findGroupById(collections, targetGroupId);
+  if (!targetGroup) {
+    alert("Please select or create a collection first.");
+    return;
+  }
+
+  if (!Array.isArray(targetGroup.tabs)) {
+    targetGroup.tabs = [];
+  }
+
+  const normActiveUrl = normalizeUrl(currentActiveTab.url);
+  const isDuplicate = targetGroup.tabs.some(
+    (t) => normalizeUrl(t.url || t.lastUrl) === normActiveUrl
+  );
+
+  if (isDuplicate) {
+    expandedGroupIds.add(targetGroup.id);
+    render();
+    return;
+  }
+
+  const ytThumb = getYouTubeThumbnail(currentActiveTab.url);
+  const savedTab = {
+    id: uid(),
+    title: currentActiveTab.title || currentActiveTab.url,
+    url: currentActiveTab.url,
+    lastUrl: currentActiveTab.url,
+    favIconUrl: currentActiveTab.favIconUrl || "",
+    thumbnail: ytThumb || null,
+    dynamic: Boolean(targetGroup.dynamic),
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  targetGroup.tabs.unshift(savedTab);
+  targetGroup.updatedAt = Date.now();
+  expandedGroupIds.add(targetGroup.id);
+
+  await saveCollections();
+  render();
+
+  trackSavedTab(currentActiveTab.id, targetGroup.id, savedTab.id);
+}
+
 /* ==========================================================================
    Tab Opening & Restoration
    ========================================================================== */
@@ -1312,9 +1803,70 @@ async function openOrFocusSavedTab(group, savedTab) {
   const targetUrl = savedTab.lastUrl || savedTab.url;
   const newTab = await chrome.tabs.create({ url: targetUrl, active: true });
 
-  // Only track dynamically if tab is dynamic or group is dynamic
-  await trackSavedTab(newTab.id, group.id, savedTab.id);
+  // Pass scroll position to background so content script can restore it
+  await trackSavedTab(newTab.id, group.id, savedTab.id, savedTab.scrollY || 0);
   window.close();
+}
+
+
+/**
+ * Close all browser tabs that are currently being tracked by the extension.
+ * Saves their current state first, then closes them to unclutter the browser.
+ */
+async function closeAllTrackedTabs() {
+  // Query all actual open browser tabs across all windows
+  let openBrowserTabs = [];
+  try {
+    openBrowserTabs = await chrome.tabs.query({});
+  } catch (_) {}
+
+  const openTabIdsSet = new Set(openBrowserTabs.map((t) => t.id));
+
+  // Validate activeTrackedMap: only keep tab IDs that actually exist in the browser
+  const validTabIdsToClose = [];
+  for (const [savedTabId, tabId] of Object.entries(activeTrackedMap)) {
+    if (tabId && openTabIdsSet.has(tabId)) {
+      validTabIdsToClose.push(tabId);
+    } else {
+      delete activeTrackedMap[savedTabId];
+    }
+  }
+
+  if (validTabIdsToClose.length === 0) {
+    showToast("No tracked tabs are currently open in the browser.");
+    renderStats();
+    return;
+  }
+
+  const count = validTabIdsToClose.length;
+  const confirmed = confirm(
+    `Close ${count} tracked tab${count !== 1 ? "s" : ""}?
+
+Your scroll positions and progress are saved. You can reopen them anytime from your collections.`
+  );
+  if (!confirmed) return;
+
+  // Flush background memory state to disk first
+  try {
+    await chrome.runtime.sendMessage({ type: "flush-store" });
+  } catch (_) {}
+
+  // Atomic close: Chrome closes all specified tabs simultaneously in one smooth call!
+  try {
+    await chrome.tabs.remove(validTabIdsToClose);
+  } catch (err) {
+    console.warn("Could not remove some tabs:", err);
+  }
+
+  // Clear trackedTabs in background
+  try {
+    await chrome.runtime.sendMessage({ type: "clear-all-tracked-tabs" });
+  } catch (_) {}
+
+  activeTrackedMap = {};
+  showToast(`✓ Closed ${count} tracked tab${count !== 1 ? "s" : ""}`);
+  await loadOpenTabs();
+  render();
 }
 
 /**
@@ -1323,6 +1875,8 @@ async function openOrFocusSavedTab(group, savedTab) {
 async function restoreAllTabs(group) {
   const tabs = getAllTabsInGroup(group);
   if (tabs.length === 0) return;
+
+  const trackingBatch = [];
 
   for (const savedTab of tabs) {
     const existingTabId = activeTrackedMap[savedTab.id];
@@ -1334,12 +1888,21 @@ async function restoreAllTabs(group) {
           continue;
         }
       } catch {
-        // Tab no longer open, proceed to open afresh
+        delete activeTrackedMap[savedTab.id];
       }
     }
     const targetUrl = savedTab.lastUrl || savedTab.url;
     const newTab = await chrome.tabs.create({ url: targetUrl, active: false });
-    await trackSavedTab(newTab.id, group.id, savedTab.id);
+    trackingBatch.push({
+      tabId: newTab.id,
+      groupId: group.id,
+      savedTabId: savedTab.id,
+      scrollY: savedTab.scrollY || 0
+    });
+  }
+
+  if (trackingBatch.length > 0) {
+    await trackSavedTabsBatch(trackingBatch);
   }
 
   render();
@@ -1616,9 +2179,17 @@ async function openPickerModal(preferredGroupId = null) {
       const favicon = node.querySelector(".tab-favicon");
       const title = node.querySelector(".picker-tab-title");
       const url = node.querySelector(".picker-tab-url");
+      const activeBadge = node.querySelector(".picker-active-badge");
 
       checkbox.value = String(tab.id);
       checkbox.checked = true;
+
+      const isCurrent = Boolean(currentActiveTab && tab.id === currentActiveTab.id);
+      if (isCurrent && activeBadge) {
+        activeBadge.classList.remove("hidden");
+      } else if (activeBadge) {
+        activeBadge.classList.add("hidden");
+      }
 
       if (tab.favIconUrl) {
         favicon.style.backgroundImage = `url("${tab.favIconUrl}")`;
@@ -1715,11 +2286,15 @@ async function confirmAddTabs() {
 
   closePickerModal();
 
-  // 3. Register tracking in background asynchronously without blocking or racing storage
+  // 3. Register tracking in background atomically in one batch (prevents race conditions)
   if (trackingQueue.length > 0) {
-    trackingQueue.forEach(({ tabId, savedTabId }) => {
-      trackSavedTab(tabId, targetGroup.id, savedTabId);
-    });
+    const batchItems = trackingQueue.map(({ tabId, savedTabId }) => ({
+      tabId: tabId,
+      groupId: targetGroup.id,
+      savedTabId: savedTabId
+    }));
+    await trackSavedTabsBatch(batchItems);
+    renderStats();
   }
 }
 
@@ -1763,58 +2338,8 @@ function closeQuickAddModal() {
  * Confirm Quick Add
  */
 async function confirmQuickAdd() {
-  const targetGroupId = els.quickAddTargetGroup.value;
-  const targetGroup = findGroupById(collections, targetGroupId);
-
-  if (!targetGroup) {
-    alert("Please select or create a collection first.");
-    return;
-  }
-
-  if (!currentActiveTab) return;
-
-  if (!Array.isArray(targetGroup.tabs)) {
-    targetGroup.tabs = [];
-  }
-
-  // Avoid duplicates: check if active tab URL already exists in this group
-  const normActiveUrl = normalizeUrl(currentActiveTab.url);
-  const isDuplicate = targetGroup.tabs.some(
-    (t) => normalizeUrl(t.url || t.lastUrl) === normActiveUrl
-  );
-
-  if (isDuplicate) {
-    // Tab with this URL already exists in the collection, don't duplicate
-    closeQuickAddModal();
-    return;
-  }
-
-  const ytThumb = getYouTubeThumbnail(currentActiveTab.url);
-  const savedTab = {
-    id: uid(),
-    title: currentActiveTab.title || currentActiveTab.url,
-    url: currentActiveTab.url,
-    lastUrl: currentActiveTab.url,
-    favIconUrl: currentActiveTab.favIconUrl || "",
-    thumbnail: ytThumb || null,
-    dynamic: Boolean(targetGroup.dynamic),
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
-  targetGroup.tabs.unshift(savedTab);
-  targetGroup.updatedAt = Date.now();
-  expandedGroupIds.add(targetGroup.id);
-
-  // 1. Save collections to storage FIRST
-  await saveCollections();
-
-  // 2. Render UI immediately
-  render();
+  await addActiveTabDirectlyToGroup(els.quickAddTargetGroup.value);
   closeQuickAddModal();
-
-  // 3. Register tracking in background
-  trackSavedTab(currentActiveTab.id, targetGroup.id, savedTab.id);
 }
 
 /* ==========================================================================
@@ -1886,13 +2411,102 @@ els.closePickerBackdrop.addEventListener("click", closePickerModal);
 els.cancelPickerBtn.addEventListener("click", closePickerModal);
 els.confirmAddTabsBtn.addEventListener("click", confirmAddTabs);
 
-// Select All Open Tabs Toggle
+// Open Tabs Picker Modal Selection Actions
 els.selectAllTabsBtn.addEventListener("click", () => {
   const checkboxes = els.pickerTabsList.querySelectorAll(".picker-tab-checkbox");
-  const allChecked = [...checkboxes].every((cb) => cb.checked);
-  checkboxes.forEach((cb) => (cb.checked = !allChecked));
-  els.selectAllTabsBtn.textContent = allChecked ? "Select All" : "Deselect All";
+  checkboxes.forEach((cb) => { cb.checked = true; });
 });
+
+if (els.deselectAllTabsBtn) {
+  els.deselectAllTabsBtn.addEventListener("click", () => {
+    const checkboxes = els.pickerTabsList.querySelectorAll(".picker-tab-checkbox");
+    checkboxes.forEach((cb) => { cb.checked = false; });
+  });
+}
+
+if (els.selectCurrentTabOnlyBtn) {
+  els.selectCurrentTabOnlyBtn.addEventListener("click", () => {
+    const activeId = currentActiveTab ? String(currentActiveTab.id) : null;
+    const checkboxes = els.pickerTabsList.querySelectorAll(".picker-tab-checkbox");
+    checkboxes.forEach((cb) => {
+      cb.checked = Boolean(activeId && cb.value === activeId);
+    });
+  });
+}
+
+if (els.confirmAddCurrentTabBtn) {
+  els.confirmAddCurrentTabBtn.addEventListener("click", async () => {
+    const targetGroupId = els.pickerTargetGroup.value;
+    await addActiveTabDirectlyToGroup(targetGroupId);
+    closePickerModal();
+  });
+}
+
+// Context Menu Global Actions
+if (els.contextOpenNewWindow) {
+  els.contextOpenNewWindow.addEventListener("click", () => {
+    if (currentContextMenuTab) {
+      chrome.windows.create({ url: currentContextMenuTab.lastUrl || currentContextMenuTab.url });
+    }
+    hideTabContextMenu();
+  });
+}
+
+if (els.contextToggleDynamic) {
+  els.contextToggleDynamic.addEventListener("click", async () => {
+    if (currentContextMenuTab && currentContextMenuGroup) {
+      const nextDynamic = !currentContextMenuTab.dynamic;
+      currentContextMenuTab.dynamic = nextDynamic;
+      currentContextMenuTab.updatedAt = Date.now();
+      currentContextMenuGroup.updatedAt = Date.now();
+
+      if (!nextDynamic) {
+        updateAncestorsDynamicStateOnDisable(currentContextMenuGroup.id);
+      }
+      await saveCollections();
+      render();
+    }
+    hideTabContextMenu();
+  });
+}
+
+if (els.contextDeleteTab) {
+  els.contextDeleteTab.addEventListener("click", async () => {
+    if (currentContextMenuTab && currentContextMenuGroup) {
+      const savedTab = currentContextMenuTab;
+      const group = currentContextMenuGroup;
+      group.tabs = group.tabs.filter((t) => t.id !== savedTab.id);
+      group.updatedAt = Date.now();
+
+      const openTabId = activeTrackedMap[savedTab.id];
+      if (openTabId) {
+        await untrackSavedTab(openTabId);
+        delete activeTrackedMap[savedTab.id];
+      }
+
+      await saveCollections();
+      render();
+    }
+    hideTabContextMenu();
+  });
+}
+
+// Hide context menu on outside click, Escape key, or window blur
+document.addEventListener("click", (e) => {
+  if (els.tabContextMenu && !els.tabContextMenu.classList.contains("hidden")) {
+    if (!e.target.closest("#tabContextMenu") && !e.target.closest(".move-tab-btn")) {
+      hideTabContextMenu();
+    }
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    hideTabContextMenu();
+  }
+});
+
+window.addEventListener("blur", hideTabContextMenu);
 
 // Quick Add Active Tab Dialog
 els.quickAddCurrentBtn.addEventListener("click", openQuickAddModal);
@@ -1929,6 +2543,11 @@ if (els.openFullTabBtn) {
   });
 }
 
+// Close all browser tabs currently tracked by the extension
+if (els.closeTrackedTabsBtn) {
+  els.closeTrackedTabsBtn.addEventListener("click", closeAllTrackedTabs);
+}
+
 // More Menu Dropdown
 els.menuToggleBtn.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -1944,21 +2563,32 @@ els.exportBtn.addEventListener("click", exportData);
 els.importInput.addEventListener("change", importData);
 
 // Real-time synchronization when Chrome storage updates in background
+// Debounced so rapid background writes don't spam re-renders
+let _storageUpdateTimer = null;
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (isSaving) return; // Ignore events triggered by popup's own write operations
   if (areaName === "local" && (changes[STORAGE_KEY] || changes[TRACKED_TABS_KEY])) {
-    loadState().then(() => render());
+    clearTimeout(_storageUpdateTimer);
+    _storageUpdateTimer = setTimeout(() => {
+      loadState().then(() => render());
+    }, 250);
   }
 });
 
 /**
  * Initialize extension popup
  */
+// Move Modal Listeners
+if (els.closeMoveBtn) els.closeMoveBtn.addEventListener("click", closeMoveModal);
+if (els.closeMoveBackdrop) els.closeMoveBackdrop.addEventListener("click", closeMoveModal);
+if (els.cancelMoveBtn) els.cancelMoveBtn.addEventListener("click", closeMoveModal);
+if (els.closeTrackedTabsBtn) els.closeTrackedTabsBtn.addEventListener("click", closeAllTrackedTabs);
+
 async function init() {
   // Detect full-page mode (opened as a browser tab via ?fullpage=1 or window width > 550px)
   function checkFullPageMode() {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get("fullpage") === "1" || window.innerWidth > 550) {
+    if (urlParams.get("fullpage") === "1" || window.innerWidth > 680) {
       document.body.classList.add("fullpage-mode");
     } else {
       document.body.classList.remove("fullpage-mode");
@@ -1969,8 +2599,11 @@ async function init() {
   window.addEventListener("resize", checkFullPageMode);
 
   setSelectedColor(DEFAULT_COLORS[0]);
-  await Promise.all([loadState(), loadOpenTabs()]);
+  // Load state FIRST so the UI appears immediately, then lazily load open tabs
+  await loadState();
   render();
+  // Defer open-tab query so popup opens instantly
+  loadOpenTabs().catch(() => {});
 }
 
 init();

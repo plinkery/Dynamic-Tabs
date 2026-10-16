@@ -40,6 +40,17 @@
             <span>Open Tabs</span>
           </button>
 
+          <button id="closeTrackedTabsBtn" class="btn btn-ghost btn-sm btn-danger-text" title="Save state &amp; close all browser tabs currently tracked by the extension">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+              <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+              <path d="m15 9-6 6M9 9l6 6"/>
+            </svg>
+            <span>Close Tracked</span>
+          </button>
+
           <button id="openFullTabBtn" class="btn btn-icon btn-ghost" title="Open in full browser tab" aria-label="Open in full browser tab">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
@@ -143,7 +154,11 @@
               <label for="pickerTargetGroup">Destination:</label>
               <select id="pickerTargetGroup" class="form-select"></select>
             </div>
-            <button id="selectAllTabsBtn" class="btn btn-ghost btn-sm">Select All</button>
+            <div class="picker-selection-actions">
+              <button id="selectAllTabsBtn" class="btn btn-ghost btn-sm" type="button">Select All</button>
+              <button id="deselectAllTabsBtn" class="btn btn-ghost btn-sm" type="button">Deselect All</button>
+              <button id="selectCurrentTabOnlyBtn" class="btn btn-ghost btn-sm" type="button">Current Tab Only</button>
+            </div>
           </div>
 
           <div id="pickerTabsList" class="picker-tabs-list">
@@ -151,8 +166,9 @@
           </div>
 
           <div class="modal-footer">
-            <button id="cancelPickerBtn" class="btn btn-ghost">Cancel</button>
-            <button id="confirmAddTabsBtn" class="btn btn-primary">Add Selected Tabs</button>
+            <button id="cancelPickerBtn" class="btn btn-ghost" type="button">Cancel</button>
+            <button id="confirmAddCurrentTabBtn" class="btn btn-secondary btn-sm" type="button">Add Current Tab Only</button>
+            <button id="confirmAddTabsBtn" class="btn btn-primary btn-sm" type="button">Add Selected Tabs</button>
           </div>
         </div>
       </div>
@@ -265,6 +281,38 @@
       </div>
     </div>
 
+          <!-- Move Tab Modal -->
+      <div id="moveModal" class="modal hidden">
+        <div class="modal-backdrop" id="closeMoveBackdrop"></div>
+        <div class="modal-card modal-sm">
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Move Tab</h2>
+              <p class="modal-subtitle">Choose destination folder or subgroup</p>
+            </div>
+            <button id="closeMoveBtn" class="btn btn-icon btn-ghost" aria-label="Close modal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="active-tab-preview" id="moveTabPreview">
+              <span class="tab-favicon" id="moveTabFavicon"></span>
+              <div class="tab-preview-text">
+                <span class="preview-title" id="moveTabTitle"></span>
+                <span class="preview-url" id="moveTabUrl"></span>
+              </div>
+            </div>
+            <div class="form-field" style="margin-top: 14px;">
+              <label>Select destination folder or subgroup:</label>
+              <div id="moveModalGroupsList" class="move-modal-groups-list"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button id="cancelMoveBtn" class="btn btn-ghost" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
     <!-- Group Card Template (Root Collection & Sub-Folders) -->
     <template id="groupTemplate">
       <section class="group-card" draggable="false">
@@ -374,6 +422,12 @@
             <span class="tab-dynamic-label">Dynamic</span>
           </button>
 
+          <button class="btn btn-ghost btn-icon move-tab-btn" title="Move tab to another folder or subgroup (or Right-click tab)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <path d="M12 11l3 3m0 0l-3 3m3-3H8"/>
+            </svg>
+          </button>
           <button class="btn btn-ghost btn-icon open-tab-btn" title="Open tab (resumes where you left off)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"></path></svg>
           </button>
@@ -390,11 +444,42 @@
         <input type="checkbox" class="picker-tab-checkbox" />
         <span class="tab-favicon"></span>
         <div class="picker-tab-info">
-          <span class="picker-tab-title"></span>
+          <div class="picker-tab-title-row">
+            <span class="picker-tab-title"></span>
+            <span class="picker-active-badge hidden">Current Tab</span>
+          </div>
           <span class="picker-tab-url"></span>
         </div>
       </label>
     </template>
+
+        <!-- Custom Tab Context Menu (Right-Click to Move Tab & Actions) -->
+    <div id="tabContextMenu" class="tab-context-menu hidden" role="menu">
+      <div class="context-menu-header">
+        <span class="context-menu-favicon"></span>
+        <span class="context-menu-title"></span>
+      </div>
+      <div class="context-menu-section-label">Move to folder:</div>
+      <div class="context-menu-groups-list"></div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-actions">
+        <button class="context-menu-item" id="contextOpenNewWindow" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"></path></svg>
+          <span>Open in New Window</span>
+        </button>
+        <button class="context-menu-item" id="contextToggleDynamic" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          <span id="contextToggleDynamicLabel">Toggle Dynamic Tracking</span>
+        </button>
+        <button class="context-menu-item context-menu-danger" id="contextDeleteTab" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          <span>Delete Tab</span>
+        </button>
+      </div>
+    </div>
+
+        <!-- Notification Toast -->
+    <div id="toastNotification" class="toast-notification hidden"></div>
 
     <script src="popup.js"></script>
   </body>
